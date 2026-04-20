@@ -1,0 +1,5 @@
+netmiko>=4.3.0
+pyyaml>=6.0
+colorama>=0.4.6
+openai>=1.0.0
+requests>=2.31.0
