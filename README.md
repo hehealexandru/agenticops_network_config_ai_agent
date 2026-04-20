@@ -22,6 +22,7 @@
 - **Access Control Lists** — create/remove ACLs blocking any traffic type (ICMP, TCP, UDP, specific ports)
 - **VLAN management** — router-on-a-stick with dot1Q sub-interfaces
 - **Configuration backup** — saves running-config to local files
+- **Containerized** - the agent is installed in a Docker Container, good for portability
 - **Bilingual** — responds in Romanian or English based on user input
 - **Portable** — works with any GNS3 topology, no hardcoded IPs or device names
 
@@ -46,17 +47,29 @@ agenticOps/
 
 ```
 
-## Install
+## Install with Docker
+
+Build the image:
 
 ```bash
-pip install -r requirements.txt --break-system-packages
+docker build -t agenticops .
 ```
 
-## How to use AgenticOps
+Run the container:
 
 ```bash
-export OPENROUTER_API_KEY="sk-or-v1-..."
-python3 agenticops/agent.py
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+chmod +x run.sh 
+./run.sh
+```
+
+## Run the Container manually:
+
+```bash
+docker run -it --rm --network host \
+  --name agenticops \
+  -e OPENROUTER_API_KEY="sk-or-v1-your-key-here" \
+  agenticops
 ```
 
 Change Model (optional):
