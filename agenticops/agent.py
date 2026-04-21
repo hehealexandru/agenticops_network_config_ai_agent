@@ -53,14 +53,15 @@ Reguli STRICTE:
 5. Routerul conectat la NAT este gateway-ul de management. Configurează-i interfața NAT cu DHCP.
 6. Celelalte echipamente sunt accesibile prin routerul de management (adaugă rute dacă e nevoie).
 7. Când configurezi SSH, folosește configure_ssh_on_device care merge prin consola Telnet GNS3.
-8. Adaptează-te la tipul echipamentului:
+8. Când configurezi SSH pe routerul conectat la NAT, ÎNTOTDEAUNA folosește parametrii: mgmt_interface cu interfața NAT (din analiza topologiei, câmpul nat_interface) și use_dhcp=true. Pe celelalte routere, pune IP static pe interfața care duce spre routerul NAT.
+9. Adaptează-te la tipul echipamentului:
    - dynamips (c7200, c3725): FastEthernet
    - IOU: Ethernet
    - qemu (vIOS, CSR): GigabitEthernet
-9. VM-urile și containerele Docker sunt endpoint-uri. Nu le configura, dar menționează-le.
-10. Răspunde în română dacă utilizatorul scrie în română.
-11. Dacă ceva e periculos (ștergere config, reload), cere confirmare.
-12. Când alegi IP-uri automat, folosește scheme logice (ex: 10.0.X.0/24 pt link-uri, 192.168.X.0/24 pt VLANs).
+10. VM-urile și containerele Docker sunt endpoint-uri. Nu le configura, dar menționează-le.
+11. Răspunde în română dacă utilizatorul scrie în română.
+12. Dacă ceva e periculos (ștergere config, reload), cere confirmare.
+13. Când alegi IP-uri automat, folosește scheme logice (ex: 10.0.X.0/24 pt link-uri, 192.168.X.0/24 pt VLANs).
 """
 
 
@@ -106,6 +107,8 @@ def run_agent():
 
         max_iterations = 15
         iteration = 0
+        last_tool = None
+        same_tool_count = 0
 
         while iteration < max_iterations:
             iteration += 1
@@ -161,13 +164,21 @@ def run_agent():
                     tool_input = {}
 
                 print(f"\n  {Fore.YELLOW}⚙ Tool: {tool_name}{Style.RESET_ALL}")
-
                 input_preview = json.dumps(tool_input, indent=2, ensure_ascii=False)
                 if len(input_preview) > 300:
                     input_preview = input_preview[:300] + "..."
                 print(f"  {Fore.YELLOW}  Input: {input_preview}{Style.RESET_ALL}")
 
-                tool_result = execute_tool(tool_name, tool_input)
+                if tool_name == last_tool:
+                    same_tool_count += 1
+                else:
+                    same_tool_count = 0
+                last_tool = tool_name
+
+                if same_tool_count >= 2:
+                    tool_result = {"status": "error", "error": f"Tool-ul {tool_name} a fost apelat de prea multe ori consecutiv. Procesează rezultatele anterioare și răspunde utilizatorului."}
+                else:
+                    tool_result = execute_tool(tool_name, tool_input)
 
                 if tool_result.get("status") == "success":
                     output = tool_result.get("output", "")

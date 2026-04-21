@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from netmiko import ConnectHandler
 
+CONSOLE_HOST = os.environ.get("GNS3_HOST", "127.0.0.1")
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
 BACKUP_DIR = BASE_DIR / "backups"
@@ -17,8 +18,9 @@ def ensure_dirs():
 
 
 def send_console_commands(host, port, commands, wait=1):
-    """Trimite comenzi prin Telnet pe consola GNS3 (pentru config inițială fără SSH)."""
     ensure_dirs()
+    if host in ("127.0.0.1", "localhost", "0.0.0.0"):
+        host = CONSOLE_HOST
     output_lines = []
     try:
         tn = telnetlib.Telnet(host, port, timeout=15)
@@ -70,7 +72,6 @@ def configure_initial_ssh(console_host, console_port, hostname, mgmt_interface=N
 
 
 def ssh_connect(host, username="admin", password="cisco", secret="cisco", port=22):
-    """Deschide conexiune SSH la un echipament Cisco IOS."""
     ensure_dirs()
     conn = ConnectHandler(
         device_type="cisco_ios",
@@ -80,10 +81,12 @@ def ssh_connect(host, username="admin", password="cisco", secret="cisco", port=2
         secret=secret,
         port=port,
         timeout=30,
+        disabled_algorithms={
+            "pubkeys": ["rsa-sha2-256", "rsa-sha2-512"],
+        },
     )
     conn.enable()
     return conn
-
 
 def send_show(host, command, **ssh_kwargs):
     """Trimite o comandă show și returnează output-ul."""

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
+import os
 import requests
 import json
 
 
 class GNS3Client:
-    def __init__(self, host="127.0.0.1", port=3080):
+    def __init__(self, host=None, port=3080):
+        if host is None:
+            host = os.environ.get("GNS3_HOST", "127.0.0.1")
         self.base_url = f"http://{host}:{port}/v2"
         self.session = requests.Session()
 

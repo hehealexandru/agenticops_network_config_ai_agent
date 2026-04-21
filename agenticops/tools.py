@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import json
 from pathlib import Path
 
@@ -388,7 +389,7 @@ def execute_tool(tool_name, tool_input):
             if err:
                 return err
             return configure_initial_ssh(
-                console_host=node.get("console_host", "127.0.0.1"),
+                console_host=os.environ.get("GNS3_HOST", node.get("console_host", "127.0.0.1")),
                 console_port=node["console"],
                 hostname=device_name,
                 mgmt_interface=tool_input.get("mgmt_interface"),
