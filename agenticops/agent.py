@@ -62,6 +62,7 @@ Reguli STRICTE:
 11. Răspunde în română dacă utilizatorul scrie în română.
 12. Dacă ceva e periculos (ștergere config, reload), cere confirmare.
 13. Când alegi IP-uri automat, folosește scheme logice (ex: 10.0.X.0/24 pt link-uri, 192.168.X.0/24 pt VLANs).
+14. Dacă un router are SSH configurat și un IP accesibil, folosește ÎNTOTDEAUNA SSH (send_show_command, send_config_commands) în loc de consolă Telnet. Consola Telnet (send_console_raw, configure_ssh_on_device) se folosește DOAR pentru configurare inițială când routerul nu are SSH.
 """
 
 

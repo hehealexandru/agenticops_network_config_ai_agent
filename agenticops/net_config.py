@@ -180,6 +180,14 @@ def configure_rip(host, version, networks, passive_interfaces=None, **ssh_kwargs
             commands.append(f"passive-interface {iface}")
     return send_config(host, commands, **ssh_kwargs)
 
+def configure_stp(host, mode="rapid-pvst", vlan_priorities=None, root_bridge_vlan=None, **ssh_kwargs):
+    commands = [f"spanning-tree mode {mode}"]
+    if root_bridge_vlan:
+        commands.append(f"spanning-tree vlan {root_bridge_vlan} root primary")
+    if vlan_priorities:
+        for vlan, priority in vlan_priorities.items():
+            commands.append(f"spanning-tree vlan {vlan} priority {priority}")
+    return send_config(host, commands, **ssh_kwargs)
 
 def configure_static_route(host, destination, mask, next_hop, **ssh_kwargs):
     """Adaugă o rută statică."""

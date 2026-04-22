@@ -10,7 +10,7 @@ from net_config import (
     configure_interface, configure_subinterface,
     configure_ospf, configure_eigrp, configure_rip,
     configure_static_route, configure_acl, remove_acl,
-    backup_config, send_console_commands, get_interface_name,
+    backup_config, configure_stp, send_console_commands, get_interface_name,
 )
 
 gns3 = GNS3Client()
@@ -311,8 +311,36 @@ TOOL_DEFINITIONS = [
             "required": ["device_name", "commands"]
         }
     },
-]
 
+    {
+        "name": "configure_stp",
+        "description": (
+            "Configurează Spanning Tree Protocol pe un switch Layer 2/3. "
+            "Suportă moduri: pvst, rapid-pvst, mst. "
+            "Poate seta root bridge pentru un VLAN specific."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "description": "IP-ul switch-ului"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["pvst", "rapid-pvst", "mst"],
+                    "description": "Modul STP (default: rapid-pvst)"
+                },
+                "root_bridge_vlan": {
+                    "type": "string",
+                    "description": "VLAN-ul pentru care switch-ul devine root bridge"
+                },
+                "vlan_priorities": {
+                    "type": "object",
+                    "description": "Dicționar VLAN:priority pentru priorități custom"
+                }
+            },
+            "required": ["host"]
+        }
+    },
+]
 
 def _find_node(device_name):
     project = gns3.get_open_project()
@@ -474,6 +502,14 @@ def execute_tool(tool_name, tool_input):
 
         elif tool_name == "backup_device_config":
             return backup_config(tool_input["host"], tool_input["device_name"])
+
+        elif tool_name == "configure_stp":
+            return configure_stp(
+                tool_input["host"],
+                tool_input.get("mode", "rapid-pvst"),
+                tool_input.get("vlan_priorities"),
+                tool_input.get("root_bridge_vlan"),
+            )
 
         elif tool_name == "send_console_raw":
             device_name = tool_input["device_name"]
