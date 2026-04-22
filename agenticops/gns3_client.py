@@ -117,6 +117,12 @@ class GNS3Client:
             return "router_iou"
 
         if node_type == "dynamips":
+            if any(sw in name for sw in ["esw", "sw", "switch"]):
+                return "switch_dynamips"
+            slots = properties.get("slots", [])
+            for slot in slots:
+                if slot and "ESW" in str(slot).upper():
+                    return "switch_dynamips"
             return "router_dynamips"
 
         if node_type == "qemu":

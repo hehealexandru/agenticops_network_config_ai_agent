@@ -72,7 +72,14 @@ docker run -it --rm --network host \
   agenticops
 ```
 
-Change Model (optional):
+## After you configure SSH on R1
+Add a route on your Ubuntu machine so you can reach the internal GNS3 network through R1:
+```bash
+sudo ip route add 10.0.0.0/8 via 
+```
+Replace `<R1_DHCP_IP>` with the IP that R1 received via DHCP on the NAT interface (FastEthernet2/0). Check it with `show ip interface brief` on R1's console.
+
+## Change Model (optional):
 ```bash
 export OPENROUTER_MODEL="google/gemma-4-26b-a4b-it:free"
 ```
