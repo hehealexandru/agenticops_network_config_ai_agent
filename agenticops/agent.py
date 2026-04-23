@@ -23,7 +23,7 @@ client = OpenAI(
     api_key=API_KEY,
 )
 
-MODEL = os.environ.get("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
+MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 
 TOOLS_OPENAI = []
 for tool in TOOL_DEFINITIONS:

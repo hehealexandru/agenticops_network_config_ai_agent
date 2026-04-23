@@ -14,6 +14,6 @@ COPY agenticops/ ./agenticops/
 RUN mkdir -p /app/logs /app/backups
 
 ENV OPENROUTER_API_KEY=""
-ENV OPENROUTER_MODEL="nvidia/nemotron-3-super-120b-a12b:free"
+ENV OPENROUTER_MODEL="openai/gpt-oss-120b:free"
 
 ENTRYPOINT ["python3", "agenticops/agent.py"]
