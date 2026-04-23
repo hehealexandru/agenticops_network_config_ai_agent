@@ -21,6 +21,7 @@
 - **Routing protocols** — OSPF, EIGRP, RIPv2, static routes
 - **Access Control Lists** — create/remove ACLs blocking any traffic type (ICMP, TCP, UDP, specific ports)
 - **VLAN management** — router-on-a-stick with dot1Q sub-interfaces
+- **Docker container Configuration** — configures IP and gateway on alpine:latest container with docker_exec_command
 - **Configuration backup** — saves running-config to local files
 - **Containerized** - the agent is installed in a Docker Container, good for portability
 - **Bilingual** — responds in Romanian or English based on user input
@@ -30,7 +31,6 @@
 ## Structure
 
 ```
-
 agenticOps/              
 ├── Dockerfile           
 ├── .dockerignore        
@@ -44,7 +44,6 @@ agenticOps/
 │   └── net_config.py
 ├── logs/
 └── backups/     
-
 ```
 
 ## Install with Docker
@@ -79,7 +78,7 @@ sudo ip route add 10.0.0.0/8 via
 ```
 Replace `<R1_DHCP_IP>` with the IP that R1 received via DHCP on the NAT interface (FastEthernet2/0). Check it with `show ip interface brief` on R1's console.
 
-## Change Model (optional):
+## In case of 503 error on the Main Model:
 ```bash
-export OPENROUTER_MODEL="google/gemma-4-26b-a4b-it:free"
+export OPENROUTER_MODEL="nvidia/nemotron-3-super-120b-a12b:free"
 ```

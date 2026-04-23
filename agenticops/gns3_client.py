@@ -126,6 +126,8 @@ class GNS3Client:
             return "router_dynamips"
 
         if node_type == "qemu":
+            if any(browser in name.lower() for browser in ["firefox", "chrome", "browser", "webterm"]):
+                return "endpoint_vm"
             if any(sw in name for sw in ["switch", "sw", "viosl2"]):
                 return "switch_qemu"
             if any(rt in name for rt in ["router", "r", "vios", "csr", "xrv"]):
