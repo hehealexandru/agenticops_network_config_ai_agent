@@ -58,7 +58,7 @@ Reguli STRICTE:
    - dynamips (c7200, c3725): FastEthernet
    - IOU: Ethernet
    - qemu (vIOS, CSR): GigabitEthernet
-10. VM-urile și containerele Docker sunt endpoint-uri. Nu le configura, dar menționează-le.
+10. VM-urile, VPCS și containerele Docker sunt endpoint-uri. Nu le configura, dar ÎNTOTDEAUNA menționează-le în summary cu numele și la ce switch sau router sunt conectate.
 11. Răspunde în română dacă utilizatorul scrie în română.
 12. Dacă ceva e periculos (ștergere config, reload), cere confirmare.
 13. Când alegi IP-uri automat, folosește scheme logice (ex: 10.0.X.0/24 pt link-uri, 192.168.X.0/24 pt VLANs).
@@ -208,8 +208,8 @@ def run_agent():
                     print(f"  {Fore.RED}✗ {tool_result.get('error', 'Eroare necunoscută')}{Style.RESET_ALL}")
 
                 result_str = json.dumps(tool_result, ensure_ascii=False)
-                if len(result_str) > 8000:
-                    result_str = result_str[:8000] + '..."}'
+                if len(result_str) > 16000:
+                    result_str = result_str[:16000] + '..."}'
 
                 conversation.append({
                     "role": "tool",

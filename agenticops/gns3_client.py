@@ -250,3 +250,41 @@ class GNS3Client:
                 "total_links": len(connections),
             }
         }
+        
+    def get_topology_summary(self, project_id):
+        topo = self.analyze_topology(project_id)
+        if "error" in topo:
+            return topo
+
+        summary_lines = []
+        summary_lines.append("=== TOPOLOGIE COMPLETĂ ===\n")
+
+        summary_lines.append(f"ROUTERE ({len(topo['devices']['routers'])}):")
+        for r in topo['devices']['routers']:
+            summary_lines.append(f"  - {r['name']} | tip: {r['classification']} | status: {r['status']} | consola: {r['console_host']}:{r['console']}")
+
+        summary_lines.append(f"\nSWITCH-URI ({len(topo['devices']['switches'])}):")
+        for s in topo['devices']['switches']:
+            summary_lines.append(f"  - {s['name']} | tip: {s['classification']} | status: {s['status']}")
+
+        summary_lines.append(f"\nENDPOINTS ({len(topo['devices']['endpoints'])}):")
+        for e in topo['devices']['endpoints']:
+            summary_lines.append(f"  - {e['name']} | tip: {e['classification']} | status: {e['status']}")
+
+        summary_lines.append(f"\nNAT/CLOUD ({len(topo['devices']['nat_clouds'])}):")
+        for n in topo['devices']['nat_clouds']:
+            summary_lines.append(f"  - {n['name']} | tip: {n['classification']}")
+
+        summary_lines.append(f"\nCONEXIUNI ({len(topo['connections'])}):")
+        for c in topo['connections']:
+            summary_lines.append(f"  - {c['node1']} ({c['node1_interface']}) <-> {c['node2']} ({c['node2_interface']})")
+
+        summary_lines.append(f"\nMANAGEMENT:")
+        summary_lines.append(f"  Router NAT: {topo['management']['nat_connected_router']}")
+        summary_lines.append(f"  Interfata NAT: {topo['management']['nat_interface']}")
+
+        return {
+            "status": "success",
+            "output": "\n".join(summary_lines),
+            "summary": topo["summary"]
+        }

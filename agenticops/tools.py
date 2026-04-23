@@ -374,10 +374,7 @@ def execute_tool(tool_name, tool_input):
                 project = gns3.get_open_project()
             if isinstance(project, dict) and "error" in project:
                 return project
-            result = gns3.analyze_topology(project["project_id"])
-            if isinstance(result, dict) and "error" in result:
-                return result
-            return {"status": "success", "topology": result}
+            return gns3.get_topology_summary(project["project_id"])
 
         elif tool_name == "gns3_start_nodes":
             node_name = tool_input.get("node_name")
