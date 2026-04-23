@@ -22,6 +22,7 @@
 - **Access Control Lists** — create/remove ACLs blocking any traffic type (ICMP, TCP, UDP, specific ports)
 - **VLAN management** — router-on-a-stick with dot1Q sub-interfaces
 - **Docker container Configuration** — configures IP and gateway on alpine:latest container with docker_exec_command
+- **Browser Classification** — recognise any Browser from GNS3 Market as endpoint_vm (ATM only Firefox)
 - **Configuration backup** — saves running-config to local files
 - **Containerized** - the agent is installed in a Docker Container, good for portability
 - **Bilingual** — responds in Romanian or English based on user input
