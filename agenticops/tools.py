@@ -338,6 +338,28 @@ TOOL_DEFINITIONS = [
                 }
             },
             "required": ["host"]
+        },
+        
+        "name": "docker_exec_command",
+        "description": (
+            "Execută o comandă într-un container Docker din topologia GNS3. "
+            "Folosește pentru a configura IP, gateway, testa conectivitate (ping), "
+            "instala pachete, sau rula orice comandă Linux pe un container. "
+            "Exemple: 'ip addr add 192.168.1.10/24 dev eth0', 'ping -c 3 10.0.1.1'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "device_name": {
+                    "type": "string",
+                    "description": "Numele containerului Docker din topologie (ex: alpine-1)"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "Comanda Linux de executat în container"
+                }
+            },
+            "required": ["device_name", "command"]
         }
     },
 ]
@@ -518,6 +540,15 @@ def execute_tool(tool_name, tool_input):
                 node["console"],
                 tool_input["commands"],
             )
+
+        elif tool_name == "docker_exec_command":
+            device_name = tool_input["device_name"]
+            project_id, node, err = _find_node(device_name)
+            if err:
+                return err
+            if node.get("node_type") != "docker":
+                return {"status": "error", "error": f"{device_name} nu este un container Docker"}
+            return gns3.docker_exec(project_id, node["node_id"], tool_input["command"])
 
         return {"status": "error", "error": f"Tool necunoscut: {tool_name}"}
 

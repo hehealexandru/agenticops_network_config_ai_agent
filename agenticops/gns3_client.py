@@ -251,6 +251,30 @@ class GNS3Client:
             }
         }
         
+    def docker_exec(self, project_id, node_id, command):
+        nodes = self.get_nodes(project_id)
+        if isinstance(nodes, dict) and "error" in nodes:
+            return nodes
+        for n in nodes:
+            if n["node_id"] == node_id:
+                console_host = os.environ.get("GNS3_HOST", n.get("console_host", "127.0.0.1"))
+                console_port = n.get("console")
+                if not console_port:
+                    return {"status": "error", "error": "Nu am găsit portul consolei"}
+                import telnetlib
+                import time
+                try:
+                    tn = telnetlib.Telnet(console_host, console_port, timeout=10)
+                    time.sleep(0.5)
+                    tn.write(command.encode("ascii") + b"\n")
+                    time.sleep(2)
+                    output = tn.read_very_eager().decode("ascii", errors="ignore")
+                    tn.close()
+                    return {"status": "success", "output": output}
+                except Exception as e:
+                    return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": f"Nodul {node_id} nu a fost găsit"}
+        
     def get_topology_summary(self, project_id):
         topo = self.analyze_topology(project_id)
         if "error" in topo:
