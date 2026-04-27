@@ -25,7 +25,8 @@
 - **Browser Classification** — recognise any Browser from GNS3 Market as endpoint_vm (ATM only Firefox)
 - **Configuration backup** — saves running-config to local files
 - **Troubleshooting** — checking the connectivity of the network
-- **Documentation** — generate documentation in .md format
+- **Documentation** — generate documentation in .md format of the whole network
+- **Security Audit** — checks passwords, SSH version, CDP, VTY ACLs, SNMP, logging, exec-timeout and generate documentation in .md format
 - **Containerized** - the agent is installed in a Docker Container, good for portability
 - **Bilingual** — responds in Romanian or English based on user input
 - **Portable** — works with any GNS3 topology, no hardcoded IPs or device names
