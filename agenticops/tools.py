@@ -11,6 +11,7 @@ from net_config import (
     configure_ospf, configure_eigrp, configure_rip,
     configure_static_route, configure_acl, remove_acl,
     backup_config, configure_stp, send_console_commands, get_interface_name,
+    ping_from_device, collect_device_info,
 )
 
 gns3 = GNS3Client()
@@ -311,7 +312,6 @@ TOOL_DEFINITIONS = [
             "required": ["device_name", "commands"]
         }
     },
-
     {
         "name": "configure_stp",
         "description": (
@@ -338,7 +338,9 @@ TOOL_DEFINITIONS = [
                 }
             },
             "required": ["host"]
-        },
+        }
+    },
+    {
         
         "name": "docker_exec_command",
         "description": (
@@ -360,6 +362,57 @@ TOOL_DEFINITIONS = [
                 }
             },
             "required": ["device_name", "command"]
+        }
+    },
+
+    {
+        "name": "ping_from_router",
+        "description": (
+            "Execută un ping de pe un router Cisco spre o adresă IP. "
+            "Folosește pentru a testa conectivitate hop-by-hop la troubleshooting. "
+            "Returnează dacă destinația e accesibilă sau nu."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "description": "IP-ul routerului de pe care se face ping"},
+                "target": {"type": "string", "description": "IP-ul destinație spre care se face ping"},
+                "count": {"type": "integer", "description": "Numărul de pachete (default: 3)"}
+            },
+            "required": ["host", "target"]
+        }
+    },
+    {
+        "name": "collect_device_info",
+        "description": (
+            "Colectează informații complete de pe un router: interfețe, tabela de rutare, "
+            "vecini OSPF, ACL-uri și running-config. Folosește pentru troubleshooting "
+            "sau pentru generarea documentației."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "description": "IP-ul routerului"}
+            },
+            "required": ["host"]
+        }
+    },
+    {
+        "name": "generate_documentation",
+        "description": (
+            "Generează documentația completă a rețelei într-un fișier markdown. "
+            "Include: topologia, tabel cu echipamente și IP-uri, conexiuni, "
+            "protocoale de rutare, ACL-uri, endpoint-uri. "
+            "Salvează fișierul în /app/docs/ sau directorul curent."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Numele fișierului (default: network_documentation.md)"
+                	}
+            },
         }
     },
 ]
@@ -550,7 +603,63 @@ def execute_tool(tool_name, tool_input):
                 return {"status": "error", "error": f"{device_name} nu este un container Docker"}
             return gns3.docker_exec(project_id, node["node_id"], tool_input["command"])
 
-        return {"status": "error", "error": f"Tool necunoscut: {tool_name}"}
+        elif tool_name == "ping_from_router":
+            return ping_from_device(
+                tool_input["host"],
+                tool_input["target"],
+                tool_input.get("count", 3),
+            )
 
+        elif tool_name == "collect_device_info":
+            return collect_device_info(tool_input["host"])
+
+        elif tool_name == "generate_documentation":
+            project = gns3.get_open_project()
+            if isinstance(project, dict) and "error" in project:
+                return project
+            topo = gns3.analyze_topology(project["project_id"])
+            if "error" in topo:
+                return topo
+
+            filename = tool_input.get("filename", "network_documentation.md")
+            lines = []
+            lines.append("# Network Documentation")
+            lines.append(f"## Generated: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+
+            lines.append("## Topology Summary")
+            s = topo["summary"]
+            lines.append(f"- Routers: {s['total_routers']}")
+            lines.append(f"- Switches: {s['total_switches']}")
+            lines.append(f"- Endpoints: {s['total_endpoints']}")
+            lines.append(f"- NAT/Cloud: {s['total_nat_clouds']}")
+            lines.append(f"- Links: {s['total_links']}\n")
+
+            lines.append("## Devices\n")
+            lines.append("| Device | Type | Classification | Status |")
+            lines.append("|--------|------|---------------|--------|")
+            for category in ["routers", "switches", "endpoints", "nat_clouds"]:
+                for d in topo["devices"][category]:
+                    lines.append(f"| {d['name']} | {d['node_type']} | {d['classification']} | {d['status']} |")
+
+            lines.append("\n## Connections\n")
+            lines.append("| From | Interface | To | Interface |")
+            lines.append("|------|----------|-----|----------|")
+            for c in topo["connections"]:
+                lines.append(f"| {c['node1']} | {c['node1_interface']} | {c['node2']} | {c['node2_interface']} |")
+
+            lines.append(f"\n## Management")
+            lines.append(f"- NAT Router: {topo['management']['nat_connected_router']}")
+            lines.append(f"- NAT Interface: {topo['management']['nat_interface']}\n")
+
+            import os
+            docs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
+            os.makedirs(docs_dir, exist_ok=True)
+            filepath = os.path.join(docs_dir, filename)
+            with open(filepath, "w") as f:
+                f.write("\n".join(lines))
+
+            return {"status": "success", "output": f"Documentație salvată în {filepath}", "content": "\n".join(lines)}
+
+        return {"status": "error", "error": f"Tool necunoscut: {tool_name}"}
     except Exception as e:
         return {"status": "error", "error": str(e)}

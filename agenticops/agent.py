@@ -64,6 +64,7 @@ Reguli STRICTE:
 13. Când alegi IP-uri automat, folosește scheme logice (ex: 10.0.X.0/24 pt link-uri, 192.168.X.0/24 pt VLANs).
 14. Dacă un router are SSH configurat și un IP accesibil, folosește ÎNTOTDEAUNA SSH (send_show_command, send_config_commands) în loc de consolă Telnet. Consola Telnet (send_console_raw, configure_ssh_on_device) se folosește DOAR pentru configurare inițială când routerul nu are SSH.
 15. Pentru containerele Docker, folosește docker_exec_command ca să configurezi IP, gateway, sau să testezi conectivitate. Exemple de comenzi: 'ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.1', 'ping -c 3 10.0.1.1'.
+16. Pentru troubleshooting, folosește ping_from_router ca să testezi conectivitate hop-by-hop și collect_device_info ca să colectezi informații complete de pe un router. Analizează interfețele (up/down), rutele, ACL-urile și vecinii OSPF pentru a identifica problema.
 """
 
 
@@ -78,7 +79,7 @@ def run_agent():
 ║                                                              ║
 ║                                                              ║
 ║                                                              ║
-║   Special commands: 'exit', 'quit', 'clear', 'model'         ║
+║   Special commands: 'exit', 'clear', 'model'                 ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
 
@@ -94,7 +95,7 @@ def run_agent():
 
         if not user_input:
             continue
-        if user_input.lower() in ("exit", "quit", "q"):
+        if user_input.lower() == "exit":
             print(f"{Fore.CYAN}La revedere!{Style.RESET_ALL}")
             break
         if user_input.lower() == "clear":

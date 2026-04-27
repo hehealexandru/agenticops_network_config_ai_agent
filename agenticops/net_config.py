@@ -268,3 +268,28 @@ def get_interface_name(node_type, adapter, port):
     elif "qemu" in node_type:
         return f"GigabitEthernet{adapter}/{port}"
     return f"FastEthernet{adapter}/{port}"
+
+def ping_from_device(host, target, count=3, **ssh_kwargs):
+    try:
+        conn = ssh_connect(host, **ssh_kwargs)
+        output = conn.send_command(f"ping {target} repeat {count}", read_timeout=30)
+        conn.disconnect()
+        success = "!" in output
+        return {"status": "success", "host": host, "target": target, "reachable": success, "output": output}
+    except Exception as e:
+        return {"status": "error", "host": host, "target": target, "error": str(e)}
+
+
+def collect_device_info(host, **ssh_kwargs):
+    try:
+        conn = ssh_connect(host, **ssh_kwargs)
+        info = {}
+        info["interfaces"] = conn.send_command("show ip interface brief")
+        info["routes"] = conn.send_command("show ip route")
+        info["ospf_neighbors"] = conn.send_command("show ip ospf neighbor")
+        info["acls"] = conn.send_command("show access-lists")
+        info["running_config"] = conn.send_command("show running-config")
+        conn.disconnect()
+        return {"status": "success", "host": host, "info": info}
+    except Exception as e:
+        return {"status": "error", "host": host, "error": str(e)}

@@ -24,6 +24,8 @@
 - **Docker container Configuration** — configures IP and gateway on alpine:latest container with docker_exec_command
 - **Browser Classification** — recognise any Browser from GNS3 Market as endpoint_vm (ATM only Firefox)
 - **Configuration backup** — saves running-config to local files
+- **Troubleshooting** — checking the connectivity of the network
+- **Documentation** — generate documentation in .md format
 - **Containerized** - the agent is installed in a Docker Container, good for portability
 - **Bilingual** — responds in Romanian or English based on user input
 - **Portable** — works with any GNS3 topology, no hardcoded IPs or device names
@@ -44,6 +46,7 @@ agenticOps/
 │   ├── gns3_client.py
 │   └── net_config.py
 ├── logs/
+├── docs/
 └── backups/     
 ```
 
