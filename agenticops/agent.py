@@ -65,6 +65,8 @@ Reguli STRICTE:
 14. Dacă un router are SSH configurat și un IP accesibil, folosește ÎNTOTDEAUNA SSH (send_show_command, send_config_commands) în loc de consolă Telnet. Consola Telnet (send_console_raw, configure_ssh_on_device) se folosește DOAR pentru configurare inițială când routerul nu are SSH.
 15. Pentru containerele Docker, folosește docker_exec_command ca să configurezi IP, gateway, sau să testezi conectivitate. Exemple de comenzi: 'ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.1', 'ping -c 3 10.0.1.1'.
 16. Pentru troubleshooting, folosește ping_from_router ca să testezi conectivitate hop-by-hop și collect_device_info ca să colectezi informații complete de pe un router. Analizează interfețele (up/down), rutele, ACL-urile și vecinii OSPF pentru a identifica problema.
+17. generate_documentation generează DOAR documentația topologiei (echipamente, conexiuni, management). NU include audit de securitate. Folosește DOAR când utilizatorul cere documentația rețelei sau topologiei.
+18. security_audit generează DOAR raportul de securitate pentru un router. Salvează automat în docs/. NU apela generate_documentation împreună cu security_audit decât dacă utilizatorul cere explicit ambele.
 """
 
 

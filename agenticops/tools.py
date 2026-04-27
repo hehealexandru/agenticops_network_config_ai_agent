@@ -11,7 +11,7 @@ from net_config import (
     configure_ospf, configure_eigrp, configure_rip,
     configure_static_route, configure_acl, remove_acl,
     backup_config, configure_stp, send_console_commands, get_interface_name,
-    ping_from_device, collect_device_info,
+    ping_from_device, collect_device_info, security_audit,
 )
 
 gns3 = GNS3Client()
@@ -415,6 +415,27 @@ TOOL_DEFINITIONS = [
             },
         }
     },
+    {
+        "name": "security_audit",
+        "description": (
+            "Execută un audit de securitate pe un router Cisco. "
+            "Verifică: parole plaintext, versiune SSH, ACL pe VTY, CDP, HTTP server, "
+            "SNMP default, exec-timeout, logging, interfețe nefolosite. "
+            "Returnează un raport cu severitate (CRITIC/WARNING/INFO) și scor."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "description": "IP-ul routerului"},
+                "device_name": {"type": "string", "description": "Numele dispozitivului (ex: R1)"},
+                "save_report": {
+                    "type": "boolean",
+                    "description": "Salvează raportul în docs/ (default: true)"
+                }
+            },
+            "required": ["host", "device_name"]
+        }
+    },
 ]
 
 def _find_node(device_name):
@@ -659,6 +680,31 @@ def execute_tool(tool_name, tool_input):
                 f.write("\n".join(lines))
 
             return {"status": "success", "output": f"Documentație salvată în {filepath}", "content": "\n".join(lines)}
+            
+        elif tool_name == "security_audit":
+            result = security_audit(tool_input["host"], tool_input["device_name"])
+            if result.get("status") == "success" and tool_input.get("save_report", True):
+                import os
+                from datetime import datetime
+                audit = result["audit"]
+                lines = []
+                lines.append(f"# Security Audit Report - {audit['device']}")
+                lines.append(f"## Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+                lines.append(f"## Host: {audit['host']}")
+                lines.append(f"## Score: {audit['score']}")
+                lines.append(f"## Summary: {audit['summary']}\n")
+                lines.append("| Severity | Issue | Fix |")
+                lines.append("|----------|-------|-----|")
+                for f in audit["findings"]:
+                    lines.append(f"| {f['severity']} | {f['issue']} | {f['fix']} |")
+                docs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
+                os.makedirs(docs_dir, exist_ok=True)
+                filename = f"security_audit_{audit['device']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                filepath = os.path.join(docs_dir, filename)
+                with open(filepath, "w") as file:
+                    file.write("\n".join(lines))
+                result["report_file"] = filepath
+            return result
 
         return {"status": "error", "error": f"Tool necunoscut: {tool_name}"}
     except Exception as e:

@@ -293,3 +293,85 @@ def collect_device_info(host, **ssh_kwargs):
         return {"status": "success", "host": host, "info": info}
     except Exception as e:
         return {"status": "error", "host": host, "error": str(e)}
+
+def security_audit(host, device_name, **ssh_kwargs):
+    try:
+        conn = ssh_connect(host, **ssh_kwargs)
+        
+        running_config = conn.send_command("show running-config")
+        ssh_status = conn.send_command("show ip ssh")
+        vty_config = conn.send_command("show running-config | section line vty")
+        interfaces = conn.send_command("show ip interface brief")
+        cdp_status = conn.send_command("show cdp")
+        http_status = conn.send_command("show running-config | include ip http")
+        logging_status = conn.send_command("show running-config | include logging")
+        snmp_status = conn.send_command("show running-config | include snmp")
+        console_config = conn.send_command("show running-config | section line con")
+        
+        conn.disconnect()
+        
+        findings = []
+        
+        if "password" in running_config and "secret" not in running_config.split("password")[0][-20:]:
+            findings.append({"severity": "CRITIC", "issue": "Parole în plaintext detectate", "fix": "Folosește 'enable secret' și 'username X secret Y' în loc de 'password'"})
+        
+        if "version 1" in ssh_status and "version 2" not in ssh_status:
+            findings.append({"severity": "CRITIC", "issue": "SSH versiune 1 activă (nesigură)", "fix": "ip ssh version 2"})
+        elif "1.99" in ssh_status:
+            findings.append({"severity": "WARNING", "issue": "SSH versiune 1.99 (suportă și v1)", "fix": "ip ssh version 2"})
+        
+        if "access-class" not in vty_config:
+            findings.append({"severity": "WARNING", "issue": "Linii VTY fără ACL", "fix": "access-class <ACL> in pe line vty 0 4"})
+        
+        if "exec-timeout" not in vty_config or "exec-timeout 0 0" in vty_config:
+            findings.append({"severity": "WARNING", "issue": "VTY fără exec-timeout (sesiuni rămân deschise)", "fix": "exec-timeout 5 0 pe line vty 0 4"})
+        
+        if "exec-timeout" not in console_config or "exec-timeout 0 0" in console_config:
+            findings.append({"severity": "WARNING", "issue": "Consolă fără exec-timeout", "fix": "exec-timeout 5 0 pe line con 0"})
+        
+        if "CDP is running" in cdp_status or "% CDP is not" not in cdp_status:
+            findings.append({"severity": "WARNING", "issue": "CDP activat (expune informații despre rețea)", "fix": "no cdp run"})
+        
+        if "ip http server" in http_status and "no ip http server" not in http_status:
+            findings.append({"severity": "WARNING", "issue": "HTTP server activ (nesecurizat)", "fix": "no ip http server"})
+        
+        if "no ip http secure-server" in http_status or "ip http secure-server" not in http_status:
+            findings.append({"severity": "INFO", "issue": "HTTPS server inactiv", "fix": "ip http secure-server"})
+        
+        if not logging_status.strip():
+            findings.append({"severity": "WARNING", "issue": "Logging dezactivat", "fix": "logging buffered 16384"})
+        
+        if "snmp" in snmp_status.lower():
+            if "public" in snmp_status or "private" in snmp_status:
+                findings.append({"severity": "CRITIC", "issue": "SNMP cu community string default (public/private)", "fix": "Schimbă community string-ul SNMP"})
+        
+        if "no service password-encryption" in running_config or "service password-encryption" not in running_config:
+            findings.append({"severity": "WARNING", "issue": "Password encryption dezactivat", "fix": "service password-encryption"})
+        
+        if "no service timestamps" in running_config:
+            findings.append({"severity": "INFO", "issue": "Timestamps dezactivate pe loguri", "fix": "service timestamps log datetime msec"})
+        
+        iface_lines = interfaces.splitlines()
+        for line in iface_lines:
+            if "up" in line.lower() and "unassigned" in line.lower():
+                iface_name = line.split()[0]
+                findings.append({"severity": "INFO", "issue": f"Interfața {iface_name} e up dar fără IP", "fix": f"shutdown pe {iface_name} dacă nu e folosită"})
+        
+        critical = len([f for f in findings if f["severity"] == "CRITIC"])
+        warnings = len([f for f in findings if f["severity"] == "WARNING"])
+        info = len([f for f in findings if f["severity"] == "INFO"])
+        total = len(findings)
+        max_score = 10
+        score = max(0, max_score - (critical * 3) - (warnings * 1))
+        
+        report = {
+            "device": device_name,
+            "host": host,
+            "score": f"{score}/{max_score}",
+            "summary": f"{critical} critice, {warnings} warnings, {info} info",
+            "findings": findings,
+        }
+        
+        return {"status": "success", "audit": report}
+    except Exception as e:
+        return {"status": "error", "host": host, "error": str(e)}
