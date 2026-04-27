@@ -11,7 +11,8 @@ from net_config import (
     configure_ospf, configure_eigrp, configure_rip,
     configure_static_route, configure_acl, remove_acl,
     backup_config, configure_stp, send_console_commands, get_interface_name,
-    ping_from_device, collect_device_info, security_audit,
+    ping_from_device, collect_device_info, security_audit, remediate_findings,
+    save_credentials,
 )
 
 gns3 = GNS3Client()
@@ -436,6 +437,56 @@ TOOL_DEFINITIONS = [
             "required": ["host", "device_name"]
         }
     },
+    
+    {
+        "name": "remediate_security",
+        "description": (
+            "Generează instrucțiuni pas cu pas pentru remedierea problemelor de securitate "
+            "găsite de security_audit. NU aplică comenzile automat, ci le afișează "
+            "utilizatorului ca să le aplice manual. "
+            "IMPORTANT: Rulează ÎNTOTDEAUNA security_audit mai întâi."
+        ),
+        
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "description": "IP-ul routerului"},
+                "device_name": {"type": "string", "description": "Numele dispozitivului"},
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "severity": {"type": "string"},
+                            "issue": {"type": "string"},
+                            "fix": {"type": "string"}
+                        }
+                    },
+                    "description": "Lista de findings de la security_audit"
+                }
+            },
+            "required": ["host", "device_name", "findings"]
+        }
+    },
+    
+    {
+        "name": "update_credentials",
+        "description": (
+            "Salvează credențialele SSH pentru un dispozitiv. "
+            "Folosește după ce utilizatorul schimbă parola pe un router. "
+            "Agentul va folosi aceste credențiale la viitoarele conexiuni SSH."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "description": "IP-ul dispozitivului"},
+                "username": {"type": "string", "description": "Username-ul SSH"},
+                "password": {"type": "string", "description": "Parola SSH"},
+                "secret": {"type": "string", "description": "Enable secret (opțional, default = parola)"}
+            },
+            "required": ["host", "username", "password"]
+        }
+    },
 ]
 
 def _find_node(device_name):
@@ -672,7 +723,6 @@ def execute_tool(tool_name, tool_input):
             lines.append(f"- NAT Router: {topo['management']['nat_connected_router']}")
             lines.append(f"- NAT Interface: {topo['management']['nat_interface']}\n")
 
-            import os
             docs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
             os.makedirs(docs_dir, exist_ok=True)
             filepath = os.path.join(docs_dir, filename)
@@ -684,7 +734,6 @@ def execute_tool(tool_name, tool_input):
         elif tool_name == "security_audit":
             result = security_audit(tool_input["host"], tool_input["device_name"])
             if result.get("status") == "success" and tool_input.get("save_report", True):
-                import os
                 from datetime import datetime
                 audit = result["audit"]
                 lines = []
@@ -706,6 +755,45 @@ def execute_tool(tool_name, tool_input):
                 result["report_file"] = filepath
             return result
 
+        elif tool_name == "remediate_security":
+            findings = tool_input["findings"]
+            fix_map = {
+                "SSH versiune 1": "ip ssh version 2",
+                "SSH versiune 1.99": "ip ssh version 2",
+                "CDP activat": "no cdp run",
+                "HTTP server activ": "no ip http server",
+                "Password encryption dezactivat": "service password-encryption",
+                "Timestamps dezactivate": "service timestamps log datetime msec",
+                "Logging dezactivat": "logging buffered 16384",
+                "VTY fără exec-timeout": "line vty 0 4 → exec-timeout 5 0 → exit",
+                "Consolă fără exec-timeout": "line con 0 → exec-timeout 5 0 → exit",
+                "HTTPS server inactiv": "ip http secure-server",
+                "Linii VTY fără ACL": "Creează un ACL și aplică: line vty 0 4 → access-class <ACL> in",
+                "Parole în plaintext": "Schimbă password cu secret: enable secret X, username Y secret Z",
+                "SNMP cu community string default": "no snmp-server community public / private",
+            }
+            instructions = []
+            for f in findings:
+                issue = f["issue"]
+                matched = False
+                for key, fix in fix_map.items():
+                    if key.lower() in issue.lower():
+                        instructions.append(f"[{f['severity']}] {issue}\n  Comandă: conf t → {fix} → end → write")
+                        matched = True
+                        break
+                if not matched:
+                    instructions.append(f"[{f['severity']}] {issue}\n  Fix manual: {f.get('fix', 'Verifică documentația Cisco')}")
+            output = f"Instrucțiuni de remediere pentru {tool_input['device_name']}:\n\n" + "\n\n".join(instructions)
+            return {"status": "success", "output": output}
+
+        elif tool_name == "update_credentials":
+            return save_credentials(
+                tool_input["host"],
+                tool_input["username"],
+                tool_input["password"],
+                tool_input.get("secret"),
+            )
+            
         return {"status": "error", "error": f"Tool necunoscut: {tool_name}"}
     except Exception as e:
         return {"status": "error", "error": str(e)}

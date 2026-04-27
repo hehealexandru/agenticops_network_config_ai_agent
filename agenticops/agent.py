@@ -67,6 +67,8 @@ Reguli STRICTE:
 16. Pentru troubleshooting, folosește ping_from_router ca să testezi conectivitate hop-by-hop și collect_device_info ca să colectezi informații complete de pe un router. Analizează interfețele (up/down), rutele, ACL-urile și vecinii OSPF pentru a identifica problema.
 17. generate_documentation generează DOAR documentația topologiei (echipamente, conexiuni, management). NU include audit de securitate. Folosește DOAR când utilizatorul cere documentația rețelei sau topologiei.
 18. security_audit generează DOAR raportul de securitate pentru un router. Salvează automat în docs/. NU apela generate_documentation împreună cu security_audit decât dacă utilizatorul cere explicit ambele.
+19. Pentru remediere securitate, rulează MAI ÎNTÂI security_audit, apoi remediate_security cu findings. NU aplica comenzile automat. Afișează instrucțiunile utilizatorului ca să le aplice manual pe consolă.
+20.  Dacă utilizatorul schimbă credențialele SSH pe un router, folosește update_credentials ca să salvezi noile credențiale. Agentul le va folosi automat la viitoarele conexiuni.
 """
 
 

@@ -3,14 +3,37 @@
 import os
 import telnetlib
 import time
+import json
 from pathlib import Path
 from netmiko import ConnectHandler
 
 CONSOLE_HOST = os.environ.get("GNS3_HOST", "127.0.0.1")
+CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "credentials.json")
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
 BACKUP_DIR = BASE_DIR / "backups"
 
+def load_credentials(host):
+    if os.path.exists(CREDENTIALS_FILE):
+        with open(CREDENTIALS_FILE, "r") as f:
+            creds = json.load(f)
+        if host in creds:
+            return creds[host]
+    return {"username": "admin", "password": "cisco", "secret": "cisco"}
+
+def save_credentials(host, username, password, secret=None):
+    creds = {}
+    if os.path.exists(CREDENTIALS_FILE):
+        with open(CREDENTIALS_FILE, "r") as f:
+            creds = json.load(f)
+    creds[host] = {
+        "username": username,
+        "password": password,
+        "secret": secret or password,
+    }
+    with open(CREDENTIALS_FILE, "w") as f:
+        json.dump(creds, f, indent=2)
+    return {"status": "success", "message": f"Credențiale salvate pentru {host}"}
 
 def ensure_dirs():
     LOG_DIR.mkdir(exist_ok=True)
@@ -71,7 +94,12 @@ def configure_initial_ssh(console_host, console_port, hostname, mgmt_interface=N
     return send_console_commands(console_host, console_port, commands, wait=2)
 
 
-def ssh_connect(host, username="admin", password="cisco", secret="cisco", port=22):
+def ssh_connect(host, username=None, password=None, secret=None, port=22):
+    if username is None or password is None:
+        creds = load_credentials(host)
+        username = username or creds["username"]
+        password = password or creds["password"]
+        secret = secret or creds.get("secret", password)
     ensure_dirs()
     conn = ConnectHandler(
         device_type="cisco_ios",
@@ -375,3 +403,44 @@ def security_audit(host, device_name, **ssh_kwargs):
         return {"status": "success", "audit": report}
     except Exception as e:
         return {"status": "error", "host": host, "error": str(e)}
+
+        
+def remediate_findings(host, findings, **ssh_kwargs):
+    fix_commands = {
+        "SSH versiune 1": ["ip ssh version 2"],
+        "SSH versiune 1.99": ["ip ssh version 2"],
+        "CDP activat": ["no cdp run"],
+        "HTTP server activ": ["no ip http server"],
+        "Password encryption dezactivat": ["service password-encryption"],
+        "Timestamps dezactivate": ["service timestamps log datetime msec"],
+        "Logging dezactivat": ["logging buffered 16384"],
+        "VTY fără exec-timeout": ["line vty 0 4", "exec-timeout 5 0", "exit"],
+        "Consolă fără exec-timeout": ["line con 0", "exec-timeout 5 0", "exit"],
+        "HTTPS server inactiv": ["ip http secure-server"],
+    }
+
+    commands = []
+    remediated = []
+    skipped = []
+
+    for finding in findings:
+        issue = finding["issue"]
+        matched = False
+        for key, cmds in fix_commands.items():
+            if key.lower() in issue.lower():
+                commands.extend(cmds)
+                remediated.append(finding)
+                matched = True
+                break
+        if not matched:
+            skipped.append(finding)
+
+    if not commands:
+        return {"status": "success", "message": "Nu sunt probleme remediabile automat", "skipped": [f["issue"] for f in skipped]}
+
+    result = send_config(host, commands, **ssh_kwargs)
+    if result.get("status") == "success":
+        result["remediated"] = [f["issue"] for f in remediated]
+        result["skipped"] = [f["issue"] for f in skipped]
+        result["message"] = f"{len(remediated)} probleme remediate, {len(skipped)} necesită intervenție manuală"
+    return result
