@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="agenticops_white.png" alt="AgenticOps Logo" width="200">
+</p>
+
 <h1 align="center">AgenticOps – AI Network Configuration Agent </h1>
 
 <p align="center">
