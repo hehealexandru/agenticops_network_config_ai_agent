@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="agenticops_white.png" alt="AgenticOps Logo" width="200">
+  <img src="agenticops_white.png" alt="AgenticOps Logo" width="2500">
 </p>
 
 <h1 align="center">AgenticOps – AI Network Configuration Agent </h1>
