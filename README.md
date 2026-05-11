@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/OS-Linux-yellow?logo=linux&logoColor=white" alt="OS">
   <img src="https://img.shields.io/badge/GNS3-Supported-00a98f?logo=cisco&logoColor=white" alt="GNS3">
   <img src="https://img.shields.io/badge/Docker-Container-2496ED?logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License">
+  <img src="https://img.shields.io/badge/License-AGPL--3.0-blue">
   <img src="https://img.shields.io/badge/Netmiko-SSH%20Automation-green" alt="Netmiko">
   <img src="https://img.shields.io/badge/OpenRouter-Free%20AI-purple?logo=openai&logoColor=white" alt="OpenRouter">
   <img src="https://img.shields.io/badge/Cisco-IOS-1BA0D7?logo=cisco&logoColor=white" alt="Cisco IOS">
