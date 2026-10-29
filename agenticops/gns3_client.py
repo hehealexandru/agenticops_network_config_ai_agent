@@ -38,7 +38,7 @@ class GNS3Client:
         for p in projects:
             if p["name"].lower() == name.lower():
                 return p
-        return {"error": f"Proiect '{name}' nu a fost găsit. Disponibile: {[p['name'] for p in projects]}"}
+        return {"error": f"Project '{name}' not found. Available: {[p['name'] for p in projects]}"}
 
     def get_open_project(self):
         projects = self.get_projects()
@@ -47,7 +47,7 @@ class GNS3Client:
         for p in projects:
             if p.get("status") == "opened":
                 return p
-        return {"error": "Niciun proiect deschis. Deschide un proiect în GNS3."}
+        return {"error": "No project is open. Open a project in GNS3."}
 
     def get_nodes(self, project_id):
         return self._get(f"/projects/{project_id}/nodes")
@@ -91,7 +91,7 @@ class GNS3Client:
                     "console_type": n.get("console_type"),
                     "console_host": n.get("console_host", "127.0.0.1"),
                 }
-        return {"error": f"Nod {node_id} nu a fost găsit"}
+        return {"error": f"Node {node_id} not found"}
 
     def classify_node(self, node):
         name = node.get("name", "").lower()
@@ -262,7 +262,7 @@ class GNS3Client:
                 console_host = os.environ.get("GNS3_HOST", n.get("console_host", "127.0.0.1"))
                 console_port = n.get("console")
                 if not console_port:
-                    return {"status": "error", "error": "Nu am găsit portul consolei"}
+                    return {"status": "error", "error": "Console port not found"}
                 import telnetlib
                 import time
                 try:
@@ -275,7 +275,7 @@ class GNS3Client:
                     return {"status": "success", "output": output}
                 except Exception as e:
                     return {"status": "error", "error": str(e)}
-        return {"status": "error", "error": f"Nodul {node_id} nu a fost găsit"}
+        return {"status": "error", "error": f"Node {node_id} not found"}
         
     def get_topology_summary(self, project_id):
         topo = self.analyze_topology(project_id)
@@ -283,31 +283,31 @@ class GNS3Client:
             return topo
 
         summary_lines = []
-        summary_lines.append("=== TOPOLOGIE COMPLETĂ ===\n")
+        summary_lines.append("=== FULL TOPOLOGY ===\n")
 
-        summary_lines.append(f"ROUTERE ({len(topo['devices']['routers'])}):")
+        summary_lines.append(f"ROUTERS ({len(topo['devices']['routers'])}):")
         for r in topo['devices']['routers']:
-            summary_lines.append(f"  - {r['name']} | tip: {r['classification']} | status: {r['status']} | consola: {r['console_host']}:{r['console']}")
+            summary_lines.append(f"  - {r['name']} | type: {r['classification']} | status: {r['status']} | console: {r['console_host']}:{r['console']}")
 
-        summary_lines.append(f"\nSWITCH-URI ({len(topo['devices']['switches'])}):")
+        summary_lines.append(f"\nSWITCHES ({len(topo['devices']['switches'])}):")
         for s in topo['devices']['switches']:
-            summary_lines.append(f"  - {s['name']} | tip: {s['classification']} | status: {s['status']}")
+            summary_lines.append(f"  - {s['name']} | type: {s['classification']} | status: {s['status']}")
 
         summary_lines.append(f"\nENDPOINTS ({len(topo['devices']['endpoints'])}):")
         for e in topo['devices']['endpoints']:
-            summary_lines.append(f"  - {e['name']} | tip: {e['classification']} | status: {e['status']}")
+            summary_lines.append(f"  - {e['name']} | type: {e['classification']} | status: {e['status']}")
 
         summary_lines.append(f"\nNAT/CLOUD ({len(topo['devices']['nat_clouds'])}):")
         for n in topo['devices']['nat_clouds']:
-            summary_lines.append(f"  - {n['name']} | tip: {n['classification']}")
+            summary_lines.append(f"  - {n['name']} | type: {n['classification']}")
 
-        summary_lines.append(f"\nCONEXIUNI ({len(topo['connections'])}):")
+        summary_lines.append(f"\nCONNECTIONS ({len(topo['connections'])}):")
         for c in topo['connections']:
             summary_lines.append(f"  - {c['node1']} ({c['node1_interface']}) <-> {c['node2']} ({c['node2_interface']})")
 
         summary_lines.append(f"\nMANAGEMENT:")
         summary_lines.append(f"  Router NAT: {topo['management']['nat_connected_router']}")
-        summary_lines.append(f"  Interfata NAT: {topo['management']['nat_interface']}")
+        summary_lines.append(f"  NAT interface: {topo['management']['nat_interface']}")
 
         return {
             "status": "success",

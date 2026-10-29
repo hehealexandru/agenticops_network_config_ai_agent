@@ -7,3 +7,5 @@ backups/
 .env
 README.md
 LICENSE
+.venv/
+credentials.json

@@ -3,27 +3,43 @@
 import os
 import sys
 import json
+import logging
 from pathlib import Path
-from openai import OpenAI
 from colorama import Fore, Style, init
 
 init(autoreset=True)
 
-API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-if not API_KEY:
-    print(f"{Fore.RED}Eroare: Setează OPENROUTER_API_KEY{Style.RESET_ALL}")
-    print(f"  export OPENROUTER_API_KEY=\"sk-or-v1-...\"")
-    sys.exit(1)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env", override=False)
+except ImportError:
+    pass
+
+_log_level = getattr(logging, os.environ.get("LOG_LEVEL", "WARNING").upper(), logging.WARNING)
+logging.basicConfig(
+    level=_log_level if isinstance(_log_level, int) else logging.WARNING,
+    format="  %(levelname)s %(name)s: %(message)s",
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tools import TOOL_DEFINITIONS, execute_tool
-
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=API_KEY,
+from llm_provider import (
+    AllProvidersUnavailable,
+    LLMRouter,
+    ProviderConfigError,
+    ProviderRequestError,
 )
 
-MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
+try:
+    router = LLMRouter.from_env()
+except ProviderConfigError as e:
+    print(f"{Fore.RED}LLM configuration error: {e}{Style.RESET_ALL}")
+    print("  Fill in the API keys in .env (e.g. OPENROUTER_API_KEY=sk-or-v1-...)")
+    sys.exit(1)
+
+MODEL = router.describe()
 
 TOOLS_OPENAI = []
 for tool in TOOL_DEFINITIONS:
@@ -36,39 +52,70 @@ for tool in TOOL_DEFINITIONS:
         }
     })
 
-SYSTEM_PROMPT = """Ești un Network Engineer AI Assistant specializat pe Cisco IOS și GNS3.
-Ai acces la un laborator GNS3 prin API-ul local și poți:
-1. Citi și analiza orice topologie GNS3
-2. Configura routere și switch-uri de la zero (SSH, IP-uri, interfețe)
-3. Configura protocoale de rutare: OSPF, EIGRP, RIPv2, rute statice
-4. Crea și gestiona ACL-uri (blochează ICMP, TCP, UDP, porturi specifice)
-5. Gestiona VLAN-uri (sub-interfețe router-on-a-stick)
-6. Face backup la configurații
+MUTATING_TOOLS = {
+    "gns3_stop_nodes",
+    "configure_ssh_on_device",
+    "send_config_commands",
+    "configure_ip_on_interface",
+    "configure_vlan_subinterface",
+    "configure_routing_protocol",
+    "configure_access_list",
+    "remove_access_list",
+    "send_console_raw",
+    "configure_stp",
+    "docker_exec_command",
+    "update_credentials",
+}
 
-Reguli STRICTE:
-1. ÎNTOTDEAUNA începe cu gns3_analyze_topology pentru a înțelege rețeaua.
-2. Folosește DOAR tools pentru a interacționa cu echipamentele. NU inventa output.
-3. Înainte de a configura, verifică starea curentă cu send_show_command.
-4. După configurare, verifică rezultatul cu o comandă show.
-5. Routerul conectat la NAT este gateway-ul de management. Configurează-i interfața NAT cu DHCP.
-6. Celelalte echipamente sunt accesibile prin routerul de management (adaugă rute dacă e nevoie).
-7. Când configurezi SSH, folosește configure_ssh_on_device care merge prin consola Telnet GNS3.
-8. Când configurezi SSH pe routerul conectat la NAT, ÎNTOTDEAUNA folosește parametrii: mgmt_interface cu interfața NAT (din analiza topologiei, câmpul nat_interface) și use_dhcp=true. Pe celelalte routere, pune IP static pe interfața care duce spre routerul NAT.
-9. Adaptează-te la tipul echipamentului:
+
+def confirm_action(tool_name):
+    try:
+        answer = input(f"  {Fore.MAGENTA}? Apply {tool_name}? [y]es / [n]o / [a]ll for this request: {Style.RESET_ALL}")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return "n"
+    answer = answer.strip().lower()
+    if answer in ("a", "all"):
+        return "a"
+    if answer in ("y", "yes"):
+        return "y"
+    return "n"
+
+
+SYSTEM_PROMPT = """You are a Network Engineer AI Assistant specialized in Cisco IOS and GNS3.
+You have access to a GNS3 lab through its local API and you can:
+1. Read and analyze any GNS3 topology
+2. Configure routers and switches from scratch (SSH, IP addresses, interfaces)
+3. Configure routing protocols: OSPF, EIGRP, RIPv2, static routes
+4. Create and manage ACLs (block ICMP, TCP, UDP, specific ports)
+5. Manage VLANs (router-on-a-stick sub-interfaces)
+6. Back up configurations
+
+Language: think, reason and respond ONLY in English, even if the user writes in another language.
+
+STRICT rules:
+1. ALWAYS start with gns3_analyze_topology to understand the network.
+2. Use ONLY tools to interact with devices. NEVER invent output.
+3. Before configuring, check the current state with send_show_command.
+4. After configuring, verify the result with a show command.
+5. The router connected to the NAT node is the management gateway. Configure its NAT interface with DHCP.
+6. The other devices are reachable through the management router (add routes if needed).
+7. When configuring SSH, use configure_ssh_on_device, which works through the GNS3 Telnet console.
+8. When configuring SSH on the router connected to NAT, ALWAYS use these parameters: mgmt_interface set to the NAT interface (from the topology analysis, field nat_interface) and use_dhcp=true. On the other routers, set a static IP on the interface that leads to the NAT router.
+9. Adapt to the device type:
    - dynamips (c7200, c3725): FastEthernet
    - IOU: Ethernet
    - qemu (vIOS, CSR): GigabitEthernet
-10. VM-urile, VPCS și containerele Docker sunt endpoint-uri. Nu le configura, dar ÎNTOTDEAUNA menționează-le în summary cu numele și la ce switch sau router sunt conectate.
-11. Răspunde în română dacă utilizatorul scrie în română.
-12. Dacă ceva e periculos (ștergere config, reload), cere confirmare.
-13. Când alegi IP-uri automat, folosește scheme logice (ex: 10.0.X.0/24 pt link-uri, 192.168.X.0/24 pt VLANs).
-14. Dacă un router are SSH configurat și un IP accesibil, folosește ÎNTOTDEAUNA SSH (send_show_command, send_config_commands) în loc de consolă Telnet. Consola Telnet (send_console_raw, configure_ssh_on_device) se folosește DOAR pentru configurare inițială când routerul nu are SSH.
-15. Pentru containerele Docker, folosește docker_exec_command ca să configurezi IP, gateway, sau să testezi conectivitate. Exemple de comenzi: 'ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.1', 'ping -c 3 10.0.1.1'.
-16. Pentru troubleshooting, folosește ping_from_router ca să testezi conectivitate hop-by-hop și collect_device_info ca să colectezi informații complete de pe un router. Analizează interfețele (up/down), rutele, ACL-urile și vecinii OSPF pentru a identifica problema.
-17. generate_documentation generează DOAR documentația topologiei (echipamente, conexiuni, management). NU include audit de securitate. Folosește DOAR când utilizatorul cere documentația rețelei sau topologiei.
-18. security_audit generează DOAR raportul de securitate pentru un router. Salvează automat în docs/. NU apela generate_documentation împreună cu security_audit decât dacă utilizatorul cere explicit ambele.
-19. Pentru remediere securitate, rulează MAI ÎNTÂI security_audit, apoi remediate_security cu findings. NU aplica comenzile automat. Afișează instrucțiunile utilizatorului ca să le aplice manual pe consolă.
-20.  Dacă utilizatorul schimbă credențialele SSH pe un router, folosește update_credentials ca să salvezi noile credențiale. Agentul le va folosi automat la viitoarele conexiuni.
+10. VMs, VPCS and Docker containers are endpoints. Do not configure them, but ALWAYS mention them in the summary with their name and the switch or router they are connected to.
+11. Always answer in English.
+12. If something is dangerous (erasing the config, reload), ask for confirmation. Every configuration change is also shown to the user for approval before it runs; if the user declines an action, do not retry it, ask how to proceed instead.
+13. When choosing IP addresses automatically, use logical schemes (e.g. 10.0.X.0/24 for links, 192.168.X.0/24 for VLANs).
+14. If a router has SSH configured and a reachable IP, ALWAYS use SSH (send_show_command, send_config_commands) instead of the Telnet console. The Telnet console (send_console_raw, configure_ssh_on_device) is used ONLY for the initial configuration, when the router has no SSH.
+15. For Docker containers, use docker_exec_command to configure IP, gateway, or to test connectivity. Example commands: 'ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.1', 'ping -c 3 10.0.1.1'.
+16. For troubleshooting, use ping_from_router to test connectivity hop by hop and collect_device_info to collect full information from a router. Analyze interfaces (up/down), routes, ACLs and OSPF neighbors to find the problem.
+17. generate_documentation generates ONLY the topology documentation (devices, connections, management). Use it ONLY when the user asks for network or topology documentation.
+18. If the user changes the SSH credentials on a router, use update_credentials to save the new credentials. The agent will use them automatically for future connections.
+19. <REDACTED> values in tool output are masked secrets. NEVER use them in configuration commands; if you need the real value, ask the user.
 """
 
 
@@ -79,7 +126,7 @@ def run_agent():
 {Fore.CYAN}╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
 ║       AgenticOps – Network Configuration AI Agent            ║
-║       Powered by OpenRouter                                  ║
+║       Powered by OpenAI-compatible LLM providers             ║
 ║                                                              ║
 ║                                                              ║
 ║                                                              ║
@@ -92,87 +139,80 @@ def run_agent():
 
     while True:
         try:
-            user_input = input(f"\n{Fore.GREEN} Tu: {Style.RESET_ALL}").strip()
+            user_input = input(f"\n{Fore.GREEN} You: {Style.RESET_ALL}").strip()
         except (EOFError, KeyboardInterrupt):
-            print(f"\n{Fore.CYAN}La revedere!{Style.RESET_ALL}")
+            print(f"\n{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
             break
 
         if not user_input:
             continue
         if user_input.lower() == "exit":
-            print(f"{Fore.CYAN}La revedere!{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
             break
         if user_input.lower() == "clear":
             conversation = [{"role": "system", "content": SYSTEM_PROMPT}]
-            print(f"{Fore.YELLOW}Conversație resetată.{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Conversation reset.{Style.RESET_ALL}")
             continue
         if user_input.lower() == "model":
-            print(f"{Fore.YELLOW}Model curent: {MODEL}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Providers (in priority order):{Style.RESET_ALL}")
+            for line in router.status():
+                print(f"  {Fore.YELLOW}{line}{Style.RESET_ALL}")
             continue
 
+        turn_start = len(conversation)
         conversation.append({"role": "user", "content": user_input})
 
         max_iterations = 15
         iteration = 0
         last_tool = None
         same_tool_count = 0
+        approve_all = False
 
         while iteration < max_iterations:
             iteration += 1
-            print(f"\n  {Fore.YELLOW} Se procesează... (pas {iteration}){Style.RESET_ALL}")
+            print(f"\n  {Fore.YELLOW} Processing... (step {iteration}){Style.RESET_ALL}")
 
             try:
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=conversation,
-                    tools=TOOLS_OPENAI,
-                    max_tokens=4096,
-                    extra_headers={
-                        "HTTP-Referer": "https://github.com/netauto-project",
-                        "X-Title": "NetAuto AgenticOps v2",
-                    },
-                )
+                result = router.chat(conversation, TOOLS_OPENAI)
+            except AllProvidersUnavailable as e:
+                print(f"\n{Fore.RED}✗ No LLM provider is available right now.{Style.RESET_ALL}")
+                for line in str(e).splitlines():
+                    print(f"  {Fore.RED}{line}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}Ending the session. Try again later or add another provider to LLM_PROVIDERS.{Style.RESET_ALL}")
+                return
+            except ProviderRequestError as e:
+                print(f"{Fore.RED}API error ({e.provider}/{e.model}, HTTP {e.status_code}): {e.detail}{Style.RESET_ALL}")
+                del conversation[turn_start:]
+                break
             except Exception as e:
-                print(f"{Fore.RED}Eroare API: {e}{Style.RESET_ALL}")
-                conversation.pop()
+                print(f"{Fore.RED}API error: {e}{Style.RESET_ALL}")
+                del conversation[turn_start:]
                 break
 
-            choice = response.choices[0]
-            message = choice.message
+            print(f"  {Style.DIM}[{result.provider}/{result.model}]{Style.RESET_ALL}")
 
-            if message.content:
-                content = message.content
-                if "</think>" in content:
-                    content = content.split("</think>")[-1].strip()
-                if content:
-                    print(f"\n{Fore.CYAN} Agent:{Style.RESET_ALL} {content}")
+            message = result.message
+            content = message.get("content") or ""
+            if content:
+                print(f"\n{Fore.CYAN} Agent:{Style.RESET_ALL} {content}")
 
-            tool_calls = message.tool_calls
-
-            if not tool_calls:
-                display_content = message.content or ""
-                if "</think>" in display_content:
-                    display_content = display_content.split("</think>")[-1].strip()
+            if not result.tool_calls:
                 conversation.append({
                     "role": "assistant",
-                    "content": display_content,
+                    "content": content,
                 })
                 break
 
             conversation.append(message)
 
-            for tc in tool_calls:
-                tool_name = tc.function.name
+            for tc in result.tool_calls:
+                tool_name = tc.name
                 tool_call_id = tc.id
-
-                try:
-                    tool_input = json.loads(tc.function.arguments)
-                except json.JSONDecodeError:
-                    tool_input = {}
+                tool_input = tc.arguments or {}
 
                 print(f"\n  {Fore.YELLOW}⚙ Tool: {tool_name}{Style.RESET_ALL}")
                 input_preview = json.dumps(tool_input, indent=2, ensure_ascii=False)
-                if len(input_preview) > 300:
+                if len(input_preview) > 300 and tool_name not in MUTATING_TOOLS:
                     input_preview = input_preview[:300] + "..."
                 print(f"  {Fore.YELLOW}  Input: {input_preview}{Style.RESET_ALL}")
 
@@ -183,9 +223,19 @@ def run_agent():
                 last_tool = tool_name
 
                 if same_tool_count >= 2:
-                    tool_result = {"status": "error", "error": f"Tool-ul {tool_name} a fost apelat de prea multe ori consecutiv. Procesează rezultatele anterioare și răspunde utilizatorului."}
+                    tool_result = {"status": "error", "error": f"Tool {tool_name} was called too many times in a row. Process the previous results and answer the user."}
+                elif tc.error:
+                    tool_result = {"status": "error", "error": f"The arguments for {tool_name} are not valid JSON ({tc.error}). Resend the call with valid JSON arguments."}
                 else:
-                    tool_result = execute_tool(tool_name, tool_input)
+                    decision = "y"
+                    if tool_name in MUTATING_TOOLS and not approve_all:
+                        decision = confirm_action(tool_name)
+                        if decision == "a":
+                            approve_all = True
+                    if decision == "n":
+                        tool_result = {"status": "error", "error": f"The user declined {tool_name}. Do not retry it; ask the user how to proceed."}
+                    else:
+                        tool_result = execute_tool(tool_name, tool_input)
 
                 if tool_result.get("status") == "success":
                     output = tool_result.get("output", "")
@@ -193,7 +243,7 @@ def run_agent():
                         lines = output.splitlines()
                         preview = "\n".join(lines[:25])
                         if len(lines) > 25:
-                            preview += f"\n  ... ({len(lines) - 25} linii omise)"
+                            preview += f"\n  ... ({len(lines) - 25} lines omitted)"
                         print(f"  {Fore.GREEN}✓ Output:{Style.RESET_ALL}")
                         for line in preview.splitlines():
                             print(f"    {line}")
@@ -209,9 +259,9 @@ def run_agent():
                                 else:
                                     summary = str(val)
                                 break
-                        print(f"  {Fore.GREEN}✓ {summary or 'Succes'}{Style.RESET_ALL}")
+                        print(f"  {Fore.GREEN}✓ {summary or 'Success'}{Style.RESET_ALL}")
                 else:
-                    print(f"  {Fore.RED}✗ {tool_result.get('error', 'Eroare necunoscută')}{Style.RESET_ALL}")
+                    print(f"  {Fore.RED}✗ {tool_result.get('error', 'Unknown error')}{Style.RESET_ALL}")
 
                 result_str = json.dumps(tool_result, ensure_ascii=False)
                 if len(result_str) > 16000:
@@ -224,7 +274,7 @@ def run_agent():
                 })
 
         if iteration >= max_iterations:
-            print(f"{Fore.RED}⚠ Prea multe iterații, opresc procesarea.{Style.RESET_ALL}")
+            print(f"{Fore.RED}⚠ Too many iterations, stopping.{Style.RESET_ALL}")
 
 
 if __name__ == "__main__":

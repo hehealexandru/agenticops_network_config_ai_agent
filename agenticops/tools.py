@@ -11,7 +11,7 @@ from net_config import (
     configure_ospf, configure_eigrp, configure_rip,
     configure_static_route, configure_acl, remove_acl,
     backup_config, configure_stp, send_console_commands, get_interface_name,
-    ping_from_device, collect_device_info, security_audit, remediate_findings,
+    ping_from_device, collect_device_info,
     save_credentials,
 )
 
@@ -20,7 +20,7 @@ gns3 = GNS3Client()
 TOOL_DEFINITIONS = [
     {
         "name": "gns3_list_projects",
-        "description": "Listează toate proiectele din GNS3. Returnează numele, ID-ul și starea fiecărui proiect.",
+        "description": "Lists all GNS3 projects. Returns the name, ID and status of each project.",
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -29,43 +29,43 @@ TOOL_DEFINITIONS = [
     {
         "name": "gns3_analyze_topology",
         "description": (
-            "Analizează topologia proiectului GNS3 curent (sau specificat). "
-            "Returnează: toate routerele, switch-urile, endpoint-urile (VM/Docker), "
-            "legăturile dintre ele, și care router e conectat la NAT. "
-            "Folosește ÎNTOTDEAUNA asta la început pentru a înțelege rețeaua."
+            "Analyzes the topology of the current (or given) GNS3 project. "
+            "Returns: all routers, switches, endpoints (VM/Docker), "
+            "the links between them, and which router is connected to NAT. "
+            "ALWAYS use this first to understand the network."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "project_name": {
                     "type": "string",
-                    "description": "Numele proiectului GNS3 (opțional, folosește proiectul deschis dacă lipsește)"
+                    "description": "GNS3 project name (optional, uses the open project if missing)"
                 }
             },
         }
     },
     {
         "name": "gns3_start_nodes",
-        "description": "Pornește toate nodurile sau un nod specific din proiectul GNS3.",
+        "description": "Starts all nodes or a specific node in the GNS3 project.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "node_name": {
                     "type": "string",
-                    "description": "Numele nodului de pornit (opțional, pornește toate dacă lipsește)"
+                    "description": "Name of the node to start (optional, starts all if missing)"
                 }
             },
         }
     },
     {
         "name": "gns3_stop_nodes",
-        "description": "Oprește toate nodurile sau un nod specific din proiectul GNS3.",
+        "description": "Stops all nodes or a specific node in the GNS3 project.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "node_name": {
                     "type": "string",
-                    "description": "Numele nodului de oprit (opțional, oprește toate dacă lipsește)"
+                    "description": "Name of the node to stop (optional, stops all if missing)"
                 }
             },
         }
@@ -73,33 +73,33 @@ TOOL_DEFINITIONS = [
     {
         "name": "configure_ssh_on_device",
         "description": (
-            "Configurează SSH pe un router prin consola Telnet GNS3. "
-            "Setează hostname, credențiale (admin/cisco), generează chei RSA, "
-            "și opțional configurează interfața de management cu IP sau DHCP. "
-            "Folosește asta ÎNAINTE de orice altă configurare SSH."
+            "Configures SSH on a router through the GNS3 Telnet console. "
+            "Sets the hostname, credentials (admin/cisco), generates RSA keys, "
+            "and optionally configures the management interface with a static IP or DHCP. "
+            "Use this BEFORE any other SSH configuration."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "device_name": {
                     "type": "string",
-                    "description": "Numele dispozitivului din topologie (ex: R1, R2)"
+                    "description": "Device name in the topology (e.g. R1, R2)"
                 },
                 "mgmt_interface": {
                     "type": "string",
-                    "description": "Interfața de management (ex: FastEthernet2/0) - opțional"
+                    "description": "Management interface (e.g. FastEthernet2/0) - optional"
                 },
                 "mgmt_ip": {
                     "type": "string",
-                    "description": "IP-ul de management (opțional, dacă nu e DHCP)"
+                    "description": "Management IP (optional, if not DHCP)"
                 },
                 "mgmt_mask": {
                     "type": "string",
-                    "description": "Masca de rețea (ex: 255.255.255.0)"
+                    "description": "Subnet mask (e.g. 255.255.255.0)"
                 },
                 "use_dhcp": {
                     "type": "boolean",
-                    "description": "Folosește DHCP pe interfața de management (true/false)"
+                    "description": "Use DHCP on the management interface (true/false)"
                 }
             },
             "required": ["device_name"]
@@ -108,8 +108,8 @@ TOOL_DEFINITIONS = [
     {
         "name": "send_show_command",
         "description": (
-            "Trimite o comandă show (read-only) pe un echipament prin SSH. "
-            "Folosește pentru verificări: show ip ospf neighbor, show access-lists, "
+            "Sends a show command (read-only) to a device over SSH. "
+            "Use it for checks: show ip ospf neighbor, show access-lists, "
             "show ip interface brief, show running-config, etc."
         ),
         "input_schema": {
@@ -117,11 +117,11 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "host": {
                     "type": "string",
-                    "description": "IP-ul sau hostname-ul dispozitivului"
+                    "description": "Device IP address or hostname"
                 },
                 "command": {
                     "type": "string",
-                    "description": "Comanda show de executat"
+                    "description": "Show command to run"
                 }
             },
             "required": ["host", "command"]
@@ -130,20 +130,20 @@ TOOL_DEFINITIONS = [
     {
         "name": "send_config_commands",
         "description": (
-            "Trimite comenzi de configurare pe un echipament prin SSH. "
-            "Comenzile sunt trimise în configure terminal. Salvează automat cu write memory."
+            "Sends configuration commands to a device over SSH. "
+            "Commands are sent in configure terminal. Saves automatically with write memory."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "host": {
                     "type": "string",
-                    "description": "IP-ul dispozitivului"
+                    "description": "Device IP address"
                 },
                 "commands": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Lista de comenzi IOS"
+                    "description": "List of IOS commands"
                 }
             },
             "required": ["host", "commands"]
@@ -151,31 +151,31 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "configure_ip_on_interface",
-        "description": "Configurează o adresă IP pe o interfață a unui router.",
+        "description": "Configures an IP address on a router interface.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul dispozitivului"},
-                "interface": {"type": "string", "description": "Numele interfeței (ex: FastEthernet1/0)"},
-                "ip": {"type": "string", "description": "Adresa IP"},
-                "mask": {"type": "string", "description": "Masca (ex: 255.255.255.0)"},
-                "description": {"type": "string", "description": "Descriere opțională"}
+                "host": {"type": "string", "description": "Device IP address"},
+                "interface": {"type": "string", "description": "Interface name (e.g. FastEthernet1/0)"},
+                "ip": {"type": "string", "description": "IP address"},
+                "mask": {"type": "string", "description": "Mask (e.g. 255.255.255.0)"},
+                "description": {"type": "string", "description": "Optional description"}
             },
             "required": ["host", "interface", "ip", "mask"]
         }
     },
     {
         "name": "configure_vlan_subinterface",
-        "description": "Creează o sub-interfață VLAN (router-on-a-stick) cu encapsulation dot1Q.",
+        "description": "Creates a VLAN sub-interface (router-on-a-stick) with dot1Q encapsulation.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul dispozitivului"},
-                "parent_interface": {"type": "string", "description": "Interfața fizică (ex: FastEthernet0/0)"},
-                "vlan_id": {"type": "integer", "description": "ID-ul VLAN-ului"},
-                "ip": {"type": "string", "description": "Adresa IP pentru sub-interfață"},
-                "mask": {"type": "string", "description": "Masca de rețea"},
-                "description": {"type": "string", "description": "Descriere opțională"}
+                "host": {"type": "string", "description": "Device IP address"},
+                "parent_interface": {"type": "string", "description": "Physical interface (e.g. FastEthernet0/0)"},
+                "vlan_id": {"type": "integer", "description": "VLAN ID"},
+                "ip": {"type": "string", "description": "IP address for the sub-interface"},
+                "mask": {"type": "string", "description": "Subnet mask"},
+                "description": {"type": "string", "description": "Optional description"}
             },
             "required": ["host", "parent_interface", "vlan_id", "ip", "mask"]
         }
@@ -183,22 +183,22 @@ TOOL_DEFINITIONS = [
     {
         "name": "configure_routing_protocol",
         "description": (
-            "Configurează un protocol de rutare pe un router. "
-            "Protocoale suportate: ospf, eigrp, rip, static."
+            "Configures a routing protocol on a router. "
+            "Supported protocols: ospf, eigrp, rip, static."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul dispozitivului"},
+                "host": {"type": "string", "description": "Device IP address"},
                 "protocol": {
                     "type": "string",
                     "enum": ["ospf", "eigrp", "rip", "static"],
-                    "description": "Protocolul de rutare"
+                    "description": "Routing protocol"
                 },
-                "ospf_process_id": {"type": "integer", "description": "OSPF process ID (doar pentru OSPF)"},
-                "router_id": {"type": "string", "description": "Router ID (doar OSPF/EIGRP)"},
-                "as_number": {"type": "integer", "description": "AS number (doar EIGRP)"},
-                "rip_version": {"type": "integer", "description": "RIP version 1 sau 2"},
+                "ospf_process_id": {"type": "integer", "description": "OSPF process ID (OSPF only)"},
+                "router_id": {"type": "string", "description": "Router ID (OSPF/EIGRP only)"},
+                "as_number": {"type": "integer", "description": "AS number (EIGRP only)"},
+                "rip_version": {"type": "integer", "description": "RIP version 1 or 2"},
                 "networks": {
                     "type": "array",
                     "items": {
@@ -209,15 +209,15 @@ TOOL_DEFINITIONS = [
                             "area": {"type": "integer"}
                         }
                     },
-                    "description": "Rețelele de anunțat"
+                    "description": "Networks to advertise"
                 },
-                "static_destination": {"type": "string", "description": "Rețea destinație (doar static)"},
-                "static_mask": {"type": "string", "description": "Masca (doar static)"},
-                "static_next_hop": {"type": "string", "description": "Next hop (doar static)"},
+                "static_destination": {"type": "string", "description": "Destination network (static only)"},
+                "static_mask": {"type": "string", "description": "Mask (static only)"},
+                "static_next_hop": {"type": "string", "description": "Next hop (static only)"},
                 "passive_interfaces": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Interfețe pasive"
+                    "description": "Passive interfaces"
                 }
             },
             "required": ["host", "protocol"]
@@ -226,19 +226,19 @@ TOOL_DEFINITIONS = [
     {
         "name": "configure_access_list",
         "description": (
-            "Creează sau modifică un Access Control List (ACL) și opțional îl aplică pe o interfață. "
-            "Poate bloca: icmp, tcp, udp, ip sau orice protocol. "
-            "Poate specifica porturi pentru tcp/udp (ex: eq 80, eq 23, eq 443)."
+            "Creates or modifies an Access Control List (ACL) and optionally applies it to an interface. "
+            "Can block: icmp, tcp, udp, ip or any protocol. "
+            "Can specify ports for tcp/udp (e.g. eq 80, eq 23, eq 443)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul dispozitivului"},
-                "acl_name": {"type": "string", "description": "Numele ACL-ului"},
+                "host": {"type": "string", "description": "Device IP address"},
+                "acl_name": {"type": "string", "description": "ACL name"},
                 "acl_type": {
                     "type": "string",
                     "enum": ["extended", "standard"],
-                    "description": "Tipul ACL-ului"
+                    "description": "ACL type"
                 },
                 "rules": {
                     "type": "array",
@@ -256,24 +256,24 @@ TOOL_DEFINITIONS = [
                         },
                         "required": ["action", "protocol", "source", "destination"]
                     },
-                    "description": "Regulile ACL"
+                    "description": "ACL rules"
                 },
-                "apply_interface": {"type": "string", "description": "Interfața pe care se aplică (opțional)"},
-                "direction": {"type": "string", "enum": ["in", "out"], "description": "Direcția (in/out)"}
+                "apply_interface": {"type": "string", "description": "Interface to apply it to (optional)"},
+                "direction": {"type": "string", "enum": ["in", "out"], "description": "Direction (in/out)"}
             },
             "required": ["host", "acl_name", "acl_type", "rules"]
         }
     },
     {
         "name": "remove_access_list",
-        "description": "Șterge un ACL de pe un dispozitiv.",
+        "description": "Removes an ACL from a device.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "host": {"type": "string"},
                 "acl_name": {"type": "string"},
                 "acl_type": {"type": "string", "enum": ["extended", "standard"]},
-                "interface": {"type": "string", "description": "Interfața de pe care se scoate (opțional)"},
+                "interface": {"type": "string", "description": "Interface to remove it from (optional)"},
                 "direction": {"type": "string", "enum": ["in", "out"]}
             },
             "required": ["host", "acl_name"]
@@ -281,12 +281,12 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "backup_device_config",
-        "description": "Salvează running-config într-un fișier de backup.",
+        "description": "Saves the running-config to a backup file.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul dispozitivului"},
-                "device_name": {"type": "string", "description": "Numele dispozitivului (pt numele fișierului)"}
+                "host": {"type": "string", "description": "Device IP address"},
+                "device_name": {"type": "string", "description": "Device name (used for the file name)"}
             },
             "required": ["host", "device_name"]
         }
@@ -294,20 +294,20 @@ TOOL_DEFINITIONS = [
     {
         "name": "send_console_raw",
         "description": (
-            "Trimite comenzi raw prin consola Telnet GNS3. "
-            "Folosește doar pentru echipamente care nu au SSH configurat."
+            "Sends raw commands through the GNS3 Telnet console. "
+            "Use only for devices that do not have SSH configured."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "device_name": {
                     "type": "string",
-                    "description": "Numele dispozitivului din topologie"
+                    "description": "Device name in the topology"
                 },
                 "commands": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Comenzile de trimis"
+                    "description": "Commands to send"
                 }
             },
             "required": ["device_name", "commands"]
@@ -316,26 +316,26 @@ TOOL_DEFINITIONS = [
     {
         "name": "configure_stp",
         "description": (
-            "Configurează Spanning Tree Protocol pe un switch Layer 2/3. "
-            "Suportă moduri: pvst, rapid-pvst, mst. "
-            "Poate seta root bridge pentru un VLAN specific."
+            "Configures Spanning Tree Protocol on a Layer 2/3 switch. "
+            "Supported modes: pvst, rapid-pvst, mst. "
+            "Can set the root bridge for a specific VLAN."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul switch-ului"},
+                "host": {"type": "string", "description": "Switch IP address"},
                 "mode": {
                     "type": "string",
                     "enum": ["pvst", "rapid-pvst", "mst"],
-                    "description": "Modul STP (default: rapid-pvst)"
+                    "description": "STP mode (default: rapid-pvst)"
                 },
                 "root_bridge_vlan": {
                     "type": "string",
-                    "description": "VLAN-ul pentru care switch-ul devine root bridge"
+                    "description": "VLAN for which the switch becomes root bridge"
                 },
                 "vlan_priorities": {
                     "type": "object",
-                    "description": "Dicționar VLAN:priority pentru priorități custom"
+                    "description": "VLAN:priority dictionary for custom priorities"
                 }
             },
             "required": ["host"]
@@ -345,21 +345,21 @@ TOOL_DEFINITIONS = [
         
         "name": "docker_exec_command",
         "description": (
-            "Execută o comandă într-un container Docker din topologia GNS3. "
-            "Folosește pentru a configura IP, gateway, testa conectivitate (ping), "
-            "instala pachete, sau rula orice comandă Linux pe un container. "
-            "Exemple: 'ip addr add 192.168.1.10/24 dev eth0', 'ping -c 3 10.0.1.1'"
+            "Runs a command in a Docker container from the GNS3 topology. "
+            "Use it to configure IP, gateway, test connectivity (ping), "
+            "install packages, or run any Linux command in a container. "
+            "Examples: 'ip addr add 192.168.1.10/24 dev eth0', 'ping -c 3 10.0.1.1'"
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "device_name": {
                     "type": "string",
-                    "description": "Numele containerului Docker din topologie (ex: alpine-1)"
+                    "description": "Docker container name in the topology (e.g. alpine-1)"
                 },
                 "command": {
                     "type": "string",
-                    "description": "Comanda Linux de executat în container"
+                    "description": "Linux command to run in the container"
                 }
             },
             "required": ["device_name", "command"]
@@ -369,16 +369,16 @@ TOOL_DEFINITIONS = [
     {
         "name": "ping_from_router",
         "description": (
-            "Execută un ping de pe un router Cisco spre o adresă IP. "
-            "Folosește pentru a testa conectivitate hop-by-hop la troubleshooting. "
-            "Returnează dacă destinația e accesibilă sau nu."
+            "Pings an IP address from a Cisco router. "
+            "Use it to test connectivity hop by hop when troubleshooting. "
+            "Returns whether the destination is reachable."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul routerului de pe care se face ping"},
-                "target": {"type": "string", "description": "IP-ul destinație spre care se face ping"},
-                "count": {"type": "integer", "description": "Numărul de pachete (default: 3)"}
+                "host": {"type": "string", "description": "IP address of the router to ping from"},
+                "target": {"type": "string", "description": "Destination IP address to ping"},
+                "count": {"type": "integer", "description": "Number of packets (default: 3)"}
             },
             "required": ["host", "target"]
         }
@@ -386,14 +386,14 @@ TOOL_DEFINITIONS = [
     {
         "name": "collect_device_info",
         "description": (
-            "Colectează informații complete de pe un router: interfețe, tabela de rutare, "
-            "vecini OSPF, ACL-uri și running-config. Folosește pentru troubleshooting "
-            "sau pentru generarea documentației."
+            "Collects full information from a router: interfaces, routing table, "
+            "OSPF neighbors, ACLs and running-config. Use it for troubleshooting "
+            "or for generating documentation."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul routerului"}
+                "host": {"type": "string", "description": "Router IP address"}
             },
             "required": ["host"]
         }
@@ -401,88 +401,35 @@ TOOL_DEFINITIONS = [
     {
         "name": "generate_documentation",
         "description": (
-            "Generează documentația completă a rețelei într-un fișier markdown. "
-            "Include: topologia, tabel cu echipamente și IP-uri, conexiuni, "
-            "protocoale de rutare, ACL-uri, endpoint-uri. "
-            "Salvează fișierul în /app/docs/ sau directorul curent."
+            "Generates complete network documentation in a markdown file. "
+            "Includes: the topology, a table of devices and IPs, connections, "
+            "routing protocols, ACLs, endpoints. "
+            "Saves the file in /app/docs/ or the current directory."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Numele fișierului (default: network_documentation.md)"
+                    "description": "File name (default: network_documentation.md)"
                 	}
             },
         }
     },
     {
-        "name": "security_audit",
-        "description": (
-            "Execută un audit de securitate pe un router Cisco. "
-            "Verifică: parole plaintext, versiune SSH, ACL pe VTY, CDP, HTTP server, "
-            "SNMP default, exec-timeout, logging, interfețe nefolosite. "
-            "Returnează un raport cu severitate (CRITIC/WARNING/INFO) și scor."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "host": {"type": "string", "description": "IP-ul routerului"},
-                "device_name": {"type": "string", "description": "Numele dispozitivului (ex: R1)"},
-                "save_report": {
-                    "type": "boolean",
-                    "description": "Salvează raportul în docs/ (default: true)"
-                }
-            },
-            "required": ["host", "device_name"]
-        }
-    },
-    
-    {
-        "name": "remediate_security",
-        "description": (
-            "Generează instrucțiuni pas cu pas pentru remedierea problemelor de securitate "
-            "găsite de security_audit. NU aplică comenzile automat, ci le afișează "
-            "utilizatorului ca să le aplice manual. "
-            "IMPORTANT: Rulează ÎNTOTDEAUNA security_audit mai întâi."
-        ),
-        
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "host": {"type": "string", "description": "IP-ul routerului"},
-                "device_name": {"type": "string", "description": "Numele dispozitivului"},
-                "findings": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "severity": {"type": "string"},
-                            "issue": {"type": "string"},
-                            "fix": {"type": "string"}
-                        }
-                    },
-                    "description": "Lista de findings de la security_audit"
-                }
-            },
-            "required": ["host", "device_name", "findings"]
-        }
-    },
-    
-    {
         "name": "update_credentials",
         "description": (
-            "Salvează credențialele SSH pentru un dispozitiv. "
-            "Folosește după ce utilizatorul schimbă parola pe un router. "
-            "Agentul va folosi aceste credențiale la viitoarele conexiuni SSH."
+            "Saves the SSH credentials for a device. "
+            "Use it after the user changes the password on a router. "
+            "The agent will use these credentials for future SSH connections."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "host": {"type": "string", "description": "IP-ul dispozitivului"},
-                "username": {"type": "string", "description": "Username-ul SSH"},
-                "password": {"type": "string", "description": "Parola SSH"},
-                "secret": {"type": "string", "description": "Enable secret (opțional, default = parola)"}
+                "host": {"type": "string", "description": "Device IP address"},
+                "username": {"type": "string", "description": "SSH username"},
+                "password": {"type": "string", "description": "SSH password"},
+                "secret": {"type": "string", "description": "Enable secret (optional, defaults to the password)"}
             },
             "required": ["host", "username", "password"]
         }
@@ -499,7 +446,7 @@ def _find_node(device_name):
     for n in nodes:
         if n["name"].lower() == device_name.lower():
             return project["project_id"], n, None
-    return None, None, {"error": f"Dispozitiv '{device_name}' nu a fost găsit"}
+    return None, None, {"error": f"Device '{device_name}' not found"}
 
 
 def execute_tool(tool_name, tool_input):
@@ -534,10 +481,10 @@ def execute_tool(tool_name, tool_input):
                 if err:
                     return err
                 gns3.start_node(pid, node["node_id"])
-                return {"status": "success", "message": f"{node_name} pornit"}
+                return {"status": "success", "message": f"{node_name} started"}
             else:
                 gns3.start_all(pid)
-                return {"status": "success", "message": "Toate nodurile pornite"}
+                return {"status": "success", "message": "All nodes started"}
 
         elif tool_name == "gns3_stop_nodes":
             node_name = tool_input.get("node_name")
@@ -550,10 +497,10 @@ def execute_tool(tool_name, tool_input):
                 if err:
                     return err
                 gns3.stop_node(pid, node["node_id"])
-                return {"status": "success", "message": f"{node_name} oprit"}
+                return {"status": "success", "message": f"{node_name} stopped"}
             else:
                 gns3.stop_all(pid)
-                return {"status": "success", "message": "Toate nodurile oprite"}
+                return {"status": "success", "message": "All nodes stopped"}
 
         elif tool_name == "configure_ssh_on_device":
             device_name = tool_input["device_name"]
@@ -626,7 +573,7 @@ def execute_tool(tool_name, tool_input):
                     tool_input["static_mask"],
                     tool_input["static_next_hop"],
                 )
-            return {"status": "error", "error": f"Protocol necunoscut: {protocol}"}
+            return {"status": "error", "error": f"Unknown protocol: {protocol}"}
 
         elif tool_name == "configure_access_list":
             return configure_acl(
@@ -672,7 +619,7 @@ def execute_tool(tool_name, tool_input):
             if err:
                 return err
             if node.get("node_type") != "docker":
-                return {"status": "error", "error": f"{device_name} nu este un container Docker"}
+                return {"status": "error", "error": f"{device_name} is not a Docker container"}
             return gns3.docker_exec(project_id, node["node_id"], tool_input["command"])
 
         elif tool_name == "ping_from_router":
@@ -729,63 +676,8 @@ def execute_tool(tool_name, tool_input):
             with open(filepath, "w") as f:
                 f.write("\n".join(lines))
 
-            return {"status": "success", "output": f"Documentație salvată în {filepath}", "content": "\n".join(lines)}
+            return {"status": "success", "output": f"Documentation saved to {filepath}", "content": "\n".join(lines)}
             
-        elif tool_name == "security_audit":
-            result = security_audit(tool_input["host"], tool_input["device_name"])
-            if result.get("status") == "success" and tool_input.get("save_report", True):
-                from datetime import datetime
-                audit = result["audit"]
-                lines = []
-                lines.append(f"# Security Audit Report - {audit['device']}")
-                lines.append(f"## Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-                lines.append(f"## Host: {audit['host']}")
-                lines.append(f"## Score: {audit['score']}")
-                lines.append(f"## Summary: {audit['summary']}\n")
-                lines.append("| Severity | Issue | Fix |")
-                lines.append("|----------|-------|-----|")
-                for f in audit["findings"]:
-                    lines.append(f"| {f['severity']} | {f['issue']} | {f['fix']} |")
-                docs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
-                os.makedirs(docs_dir, exist_ok=True)
-                filename = f"security_audit_{audit['device']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-                filepath = os.path.join(docs_dir, filename)
-                with open(filepath, "w") as file:
-                    file.write("\n".join(lines))
-                result["report_file"] = filepath
-            return result
-
-        elif tool_name == "remediate_security":
-            findings = tool_input["findings"]
-            fix_map = {
-                "SSH versiune 1": "ip ssh version 2",
-                "SSH versiune 1.99": "ip ssh version 2",
-                "CDP activat": "no cdp run",
-                "HTTP server activ": "no ip http server",
-                "Password encryption dezactivat": "service password-encryption",
-                "Timestamps dezactivate": "service timestamps log datetime msec",
-                "Logging dezactivat": "logging buffered 16384",
-                "VTY fără exec-timeout": "line vty 0 4 → exec-timeout 5 0 → exit",
-                "Consolă fără exec-timeout": "line con 0 → exec-timeout 5 0 → exit",
-                "HTTPS server inactiv": "ip http secure-server",
-                "Linii VTY fără ACL": "Creează un ACL și aplică: line vty 0 4 → access-class <ACL> in",
-                "Parole în plaintext": "Schimbă password cu secret: enable secret X, username Y secret Z",
-                "SNMP cu community string default": "no snmp-server community public / private",
-            }
-            instructions = []
-            for f in findings:
-                issue = f["issue"]
-                matched = False
-                for key, fix in fix_map.items():
-                    if key.lower() in issue.lower():
-                        instructions.append(f"[{f['severity']}] {issue}\n  Comandă: conf t → {fix} → end → write")
-                        matched = True
-                        break
-                if not matched:
-                    instructions.append(f"[{f['severity']}] {issue}\n  Fix manual: {f.get('fix', 'Verifică documentația Cisco')}")
-            output = f"Instrucțiuni de remediere pentru {tool_input['device_name']}:\n\n" + "\n\n".join(instructions)
-            return {"status": "success", "output": output}
-
         elif tool_name == "update_credentials":
             return save_credentials(
                 tool_input["host"],
@@ -794,6 +686,6 @@ def execute_tool(tool_name, tool_input):
                 tool_input.get("secret"),
             )
             
-        return {"status": "error", "error": f"Tool necunoscut: {tool_name}"}
+        return {"status": "error", "error": f"Unknown tool: {tool_name}"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
