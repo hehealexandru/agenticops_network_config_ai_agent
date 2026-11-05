@@ -143,16 +143,39 @@ def _ask_password(label: str, getpass_fn: Callable[[str], str], ios_cli: bool) -
     return first
 
 
+_OVERWRITE_WARNINGS = {
+    LOCAL_KEY: ("Routers that were already set up keep the old local administrator. "
+                "Run the SSH setup again on them, or change the user on each router."),
+    AAA_KEY: ("The AAA server keeps its own copy of the agent password. Change it there too: "
+              "radius-user passwd {username}"),
+}
+
+
+def overwrite_warning(key: str, old: dict[str, Any] | None, username: str, password: str,
+                      secret: str | None) -> str | None:
+    """Warning shown when a login changes credentials that devices may already use."""
+    if not old:
+        return None
+    if (old.get("username"), old.get("password"), old.get("secret")) == (username, password, secret):
+        return None
+    text = _OVERWRITE_WARNINGS.get(
+        key, "The device is not changed: update the password on {key} itself as well.")
+    return ("This only updates " + DEFAULT_PATH.name + ". "
+            + text.format(username=old.get("username", username), key=key))
+
+
 def interactive_login(
     scope: str | None = None,
     *,
     input_fn: Callable[[str], str] = input,
     getpass_fn: Callable[[str], str] = getpass.getpass,
     path: Path = DEFAULT_PATH,
+    warn: Callable[[str], None] | None = None,
 ) -> str:
     """Ask for credentials with hidden input and save them. Returns a status message.
 
-    Raises CredentialsError on invalid input; EOFError/KeyboardInterrupt propagate.
+    `warn` receives a warning when existing credentials are changed (devices keep the old
+    ones). Raises CredentialsError on invalid input; EOFError/KeyboardInterrupt propagate.
     """
     if not scope:
         scope = input_fn("  Scope [aaa = RADIUS agent profile / local = lab admin / device IP]: ")
@@ -172,5 +195,9 @@ def interactive_login(
     else:
         secret = getpass_fn("  Enable secret (Enter = none): ") or None
 
+    old = load_all(path).get(key)
     save(key, username, password, secret, path)
+    warning = overwrite_warning(key, old, username, password, secret)
+    if warning and warn:
+        warn(warning)
     return f"Saved credentials for '{key}' (user {username}) in {path.name}"

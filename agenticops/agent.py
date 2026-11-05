@@ -26,6 +26,7 @@ logging.basicConfig(
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import credentials_store
 from credentials_store import CredentialsError
+from loop_guard import LoopGuard
 from tools import TOOL_DEFINITIONS, execute_tool
 from llm_provider import (
     AllProvidersUnavailable,
@@ -43,6 +44,11 @@ except ProviderConfigError as e:
     sys.exit(1)
 
 MODEL = router.describe()
+
+try:
+    MAX_ITERATIONS = max(1, int(os.environ.get("AGENT_MAX_ITERATIONS", "15")))
+except ValueError:
+    MAX_ITERATIONS = 15
 
 TOOLS_OPENAI = []
 for tool in TOOL_DEFINITIONS:
@@ -71,18 +77,52 @@ MUTATING_TOOLS = {
 
 
 def run_login(scope=None):
-    """Handle the local 'login' command. Nothing here is added to the conversation."""
+    """Handle the local 'login' command. Nothing here is added to the conversation.
+
+    Returns True when saved, False on invalid input, None when cancelled.
+    """
     print(f"  {Fore.YELLOW}Credentials are saved locally and never sent to the LLM.{Style.RESET_ALL}")
     try:
-        message = credentials_store.interactive_login(scope)
+        message = credentials_store.interactive_login(
+            scope, warn=lambda text: print(f"  {Fore.YELLOW}⚠ {text}{Style.RESET_ALL}"))
     except (EOFError, KeyboardInterrupt):
         print(f"\n  {Fore.YELLOW}Login cancelled.{Style.RESET_ALL}")
-        return False
+        return None
     except CredentialsError as e:
         print(f"  {Fore.RED}✗ {e}{Style.RESET_ALL}")
         return False
     print(f"  {Fore.GREEN}✓ {message}{Style.RESET_ALL}")
     return True
+
+
+def prepare_local_admin(device_name):
+    """Before an SSH setup: confirm or enter the local administrator it will create.
+
+    Returns None when ready, or an error message for the model.
+    """
+    saved = credentials_store.get(credentials_store.LOCAL_KEY)
+    if saved:
+        try:
+            answer = input(f"  {Fore.MAGENTA}? Local admin for {device_name}: {saved['username']} "
+                           f"(saved in credentials.json). [Enter] use it / [c] change: {Style.RESET_ALL}")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            answer = ""
+        if answer.strip().lower() not in ("c", "change"):
+            return None
+    else:
+        print(f"  {Fore.YELLOW}The SSH setup creates a local lab administrator on {device_name}. "
+              f"Enter it now:{Style.RESET_ALL}")
+    for attempt in range(3):
+        saved = run_login("local")
+        if saved:
+            return None
+        if saved is None:
+            break
+        if attempt < 2:
+            print(f"  {Fore.YELLOW}Try again ({2 - attempt} attempts left), or press Ctrl+C to cancel.{Style.RESET_ALL}")
+    return ("The local administrator was not provided, so the SSH setup was not executed. "
+            "Tell the user to run 'login local' and then ask again. Do not retry on your own.")
 
 
 def confirm_action(tool_name):
@@ -127,11 +167,11 @@ STRICT rules:
 11. Always answer in English.
 12. If something is dangerous (erasing the config, reload), ask for confirmation. Every configuration change is also shown to the user for approval before it runs; if the user declines an action, do not retry it, ask how to proceed instead.
 13. When choosing IP addresses automatically, use logical schemes (e.g. 10.0.X.0/24 for links, 192.168.X.0/24 for VLANs).
-14. If a router has SSH configured and a reachable IP, ALWAYS use SSH (send_show_command, send_config_commands) instead of the Telnet console. The Telnet console (send_console_raw, configure_ssh_on_device) is used ONLY for the initial configuration, when the router has no SSH.
+14. SSH tools need the device IP address in "host", never the device name. configure_ssh_on_device returns the management IP in "mgmt_ip": use it. If a router has SSH configured and a reachable IP, ALWAYS use SSH (send_show_command, send_config_commands) instead of the Telnet console. The Telnet console (send_console_raw, configure_ssh_on_device) is used ONLY for the initial configuration, when the router has no SSH.
 15. For Docker containers, use docker_exec_command to configure IP, gateway, or to test connectivity. Example commands: 'ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.1', 'ping -c 3 10.0.1.1'.
 16. For troubleshooting, use ping_from_router to test connectivity hop by hop and collect_device_info to collect full information from a router. Analyze interfaces (up/down), routes, ACLs and OSPF neighbors to find the problem.
 17. generate_documentation generates ONLY the topology documentation (devices, connections, management). Use it ONLY when the user asks for network or topology documentation.
-18. Credentials are managed only by the user, with the local 'login' command. NEVER ask the user to type a password in the chat and never put passwords in tool arguments. If SSH authentication fails or credentials are missing, tell the user to run 'login' (scope 'aaa', 'local' or the device IP).
+18. Credentials are managed only by the user, with the local 'login' command. NEVER ask the user to type a password in the chat and never put passwords in tool arguments. If SSH authentication fails or credentials are missing, tell the user to run 'login' (scope 'aaa', 'local' or the device IP). Console logins are handled automatically by the agent: never send usernames or passwords through send_console_raw, and never guess, invent or state credentials (you do not know them).
 19. <REDACTED> values in tool output are masked secrets. NEVER use them in configuration commands; if you need the real value, ask the user.
 """
 
@@ -182,13 +222,11 @@ def run_agent():
         turn_start = len(conversation)
         conversation.append({"role": "user", "content": user_input})
 
-        max_iterations = 15
         iteration = 0
-        last_tool = None
-        same_tool_count = 0
+        guard = LoopGuard()
         approve_all = False
 
-        while iteration < max_iterations:
+        while iteration < MAX_ITERATIONS and not guard.should_stop:
             iteration += 1
             print(f"\n  {Fore.YELLOW} Processing... (step {iteration}){Style.RESET_ALL}")
 
@@ -230,20 +268,24 @@ def run_agent():
                 tool_call_id = tc.id
                 tool_input = tc.arguments or {}
 
+                if guard.should_stop:
+                    # Every tool call needs a result in the history, even if it is skipped.
+                    conversation.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": serialize_tool_result({"status": "error", "error": "Not executed: the turn was stopped."}),
+                    })
+                    continue
+
                 print(f"\n  {Fore.YELLOW}⚙ Tool: {tool_name}{Style.RESET_ALL}")
                 input_preview = json.dumps(tool_input, indent=2, ensure_ascii=False)
                 if len(input_preview) > 300 and tool_name not in MUTATING_TOOLS:
                     input_preview = input_preview[:300] + "..."
                 print(f"  {Fore.YELLOW}  Input: {input_preview}{Style.RESET_ALL}")
 
-                if tool_name == last_tool:
-                    same_tool_count += 1
-                else:
-                    same_tool_count = 0
-                last_tool = tool_name
-
-                if same_tool_count >= 2:
-                    tool_result = {"status": "error", "error": f"Tool {tool_name} was called too many times in a row. Process the previous results and answer the user."}
+                blocked = guard.check(tool_name, tool_input)
+                if blocked:
+                    tool_result = {"status": "error", "error": blocked}
                 elif tc.error:
                     tool_result = {"status": "error", "error": f"The arguments for {tool_name} are not valid JSON ({tc.error}). Resend the call with valid JSON arguments."}
                 else:
@@ -252,15 +294,16 @@ def run_agent():
                         decision = confirm_action(tool_name)
                         if decision == "a":
                             approve_all = True
-                    if decision != "n" and tool_name == "configure_ssh_on_device" \
-                            and not credentials_store.get(credentials_store.LOCAL_KEY):
-                        print(f"  {Fore.YELLOW}The SSH setup creates a local lab administrator on the router. Enter it now:{Style.RESET_ALL}")
-                        if not run_login("local"):
-                            decision = "n"
+                    credentials_error = None
+                    if decision != "n" and tool_name == "configure_ssh_on_device":
+                        credentials_error = prepare_local_admin(tool_input.get("device_name", "the router"))
                     if decision == "n":
                         tool_result = {"status": "error", "error": f"The user declined {tool_name}. Do not retry it; ask the user how to proceed."}
+                    elif credentials_error:
+                        tool_result = {"status": "error", "error": credentials_error}
                     else:
                         tool_result = execute_tool(tool_name, tool_input)
+                guard.record(tool_name, tool_result.get("status") == "success")
 
                 if tool_result.get("status") == "success":
                     output = tool_result.get("output", "")
@@ -272,6 +315,8 @@ def run_agent():
                         print(f"  {Fore.GREEN}✓ Output:{Style.RESET_ALL}")
                         for line in preview.splitlines():
                             print(f"    {line}")
+                        if tool_result.get("message"):
+                            print(f"  {Fore.GREEN}✓ {tool_result['message']}{Style.RESET_ALL}")
                     else:
                         summary = ""
                         for key in ["message", "topology", "projects", "backup_file"]:
@@ -296,8 +341,11 @@ def run_agent():
                     "content": result_str,
                 })
 
-        if iteration >= max_iterations:
-            print(f"{Fore.RED}⚠ Too many iterations, stopping.{Style.RESET_ALL}")
+        if guard.should_stop:
+            print(f"\n{Fore.RED}⚠ Stopped this request: {guard.stop_reason}.{Style.RESET_ALL}")
+            print(f"  {Fore.YELLOW}This is the loop guard, not a rate limit. Check the device or rephrase the request.{Style.RESET_ALL}")
+        elif iteration >= MAX_ITERATIONS:
+            print(f"{Fore.RED}⚠ Reached AGENT_MAX_ITERATIONS ({MAX_ITERATIONS}), stopping.{Style.RESET_ALL}")
 
 
 if __name__ == "__main__":

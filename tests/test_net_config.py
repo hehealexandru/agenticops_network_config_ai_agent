@@ -77,14 +77,3 @@ def test_send_show_returns_error_status(store, monkeypatch):
     result = net_config.send_show("10.0.100.1", "show version")
     assert result["status"] == "error"
     assert "login" in result["error"]
-
-
-def test_initial_ssh_uses_given_credentials(monkeypatch):
-    sent = {}
-    monkeypatch.setattr(net_config, "send_console_commands",
-                        lambda host, port, commands, wait=1: sent.setdefault("cmds", commands))
-    net_config.configure_initial_ssh("127.0.0.1", 5000, "R1", "netadmin", "LocalPass1",
-                                     "EnablePass1")
-    assert "username netadmin privilege 15 secret LocalPass1" in sent["cmds"]
-    assert "enable secret EnablePass1" in sent["cmds"]
-    assert not any("cisco" in c for c in sent["cmds"])

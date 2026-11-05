@@ -101,6 +101,14 @@ TOOL_DEFINITIONS = [
                 "use_dhcp": {
                     "type": "boolean",
                     "description": "Use DHCP on the management interface (true/false)"
+                },
+                "regenerate_keys": {
+                    "type": "boolean",
+                    "description": (
+                        "Generate new RSA keys even if SSH already works (default false). "
+                        "Changes the SSH host key: use it only if the user asks or the keys "
+                        "are too small for SSH v2."
+                    )
                 }
             },
             "required": ["device_name"]
@@ -507,6 +515,7 @@ def execute_tool(tool_name, tool_input):
                 mgmt_ip=tool_input.get("mgmt_ip"),
                 mgmt_mask=tool_input.get("mgmt_mask"),
                 use_dhcp=tool_input.get("use_dhcp", False),
+                regenerate_keys=tool_input.get("regenerate_keys", False),
             )
 
         elif tool_name == "send_show_command":

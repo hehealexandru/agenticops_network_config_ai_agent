@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
+import ipaddress
 import os
-import telnetlib
+import re
 import time
 from pathlib import Path
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetmikoAuthenticationException
 
 import credentials_store
+from console import command_errors, open_console
 from credentials_store import CredentialsError
 
 CONSOLE_HOST = os.environ.get("GNS3_HOST", "127.0.0.1")
@@ -20,38 +22,75 @@ def ensure_dirs():
     BACKUP_DIR.mkdir(exist_ok=True)
 
 
-def send_console_commands(host, port, commands, wait=1):
-    ensure_dirs()
+_CRYPTO_TIMEOUT = 180  # RSA 2048 key generation is slow on Dynamips
+
+
+def _open_ios_console(host, port):
     if host in ("127.0.0.1", "localhost", "0.0.0.0"):
         host = CONSOLE_HOST
-    output_lines = []
+    return open_console(host, port, lambda: credentials_store.get(credentials_store.LOCAL_KEY))
+
+
+def _interface_matches(name, full_name):
+    """'f1/0', 'Fa1/0' and 'FastEthernet1/0' all name the same interface."""
+    a = re.match(r"^([A-Za-z-]+)\s*([\d/.:]+)$", name.strip())
+    b = re.match(r"^([A-Za-z-]+)\s*([\d/.:]+)$", full_name.strip())
+    if not a or not b:
+        return False
+    return a.group(2) == b.group(2) and b.group(1).lower().startswith(a.group(1).lower())
+
+
+def interface_ip(brief_output, interface):
+    """IP address of `interface` from 'show ip interface brief', or None."""
+    for line in brief_output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and _interface_matches(interface, parts[0]):
+            try:
+                return str(ipaddress.ip_address(parts[1]))
+            except ValueError:
+                return None
+    return None
+
+
+def send_console_commands(host, port, commands, boot_timeout=300):
+    ensure_dirs()
+    con = None
     try:
-        tn = telnetlib.Telnet(host, port, timeout=15)
-        time.sleep(1)
-        tn.write(b"\r\n")
-        time.sleep(1)
-
+        con = _open_ios_console(host, port)
+        con.wake(boot_timeout)
+        errors = []
         for cmd in commands:
-            tn.write(cmd.encode("ascii") + b"\r\n")
-            time.sleep(wait)
-            result = tn.read_very_eager().decode("ascii", errors="ignore")
-            output_lines.append(result)
-
-        tn.close()
-        return {"status": "success", "output": "\n".join(output_lines)}
+            cmd = cmd.strip()
+            if not cmd:
+                continue  # waking the console and the login are handled by the agent
+            if cmd.lower() in ("en", "enable"):
+                con.enable()
+                continue
+            out = con.run(cmd, timeout=_CRYPTO_TIMEOUT if cmd.startswith("crypto key") else 60)
+            errors += [f"{cmd}: {e}" for e in command_errors(out)]
+        result = {
+            "status": "error" if errors else "success",
+            "prompt": con.prompt,
+            "output": "\n".join(con.transcript),
+        }
+        if errors:
+            result["error"] = "IOS rejected: " + "; ".join(errors)
+        return result
     except Exception as e:
         return {"status": "error", "error": str(e)}
+    finally:
+        if con:
+            con.close()
 
 
 def configure_initial_ssh(console_host, console_port, hostname, username, password, secret,
-                          mgmt_interface=None, mgmt_ip=None, mgmt_mask=None, use_dhcp=False):
+                          mgmt_interface=None, mgmt_ip=None, mgmt_mask=None, use_dhcp=False,
+                          regenerate_keys=False, boot_timeout=300, dhcp_timeout=60):
     commands = [
-        "",
-        "enable",
-        "conf t",
         f"hostname {hostname}",
         "ip domain-name lab.local",
         "crypto key generate rsa modulus 2048",
+        "ip ssh version 2",
         f"username {username} privilege 15 secret {password}",
         f"enable secret {secret}",
         "line vty 0 4",
@@ -59,7 +98,6 @@ def configure_initial_ssh(console_host, console_port, hostname, username, passwo
         "transport input ssh",
         "exit",
     ]
-
     if mgmt_interface:
         commands.append(f"interface {mgmt_interface}")
         if use_dhcp:
@@ -69,9 +107,71 @@ def configure_initial_ssh(console_host, console_port, hostname, username, passwo
         commands.append("no shutdown")
         commands.append("exit")
 
-    commands.extend(["end", "write"])
+    ensure_dirs()
+    con = None
+    try:
+        con = _open_ios_console(console_host, console_port)
+        con.wake(boot_timeout)
+        con.enable()
+        con.run("terminal length 0")
+        # Regenerating RSA keys changes the SSH host key, so every SSH client would warn
+        # about a possible man-in-the-middle. Keep the keys when SSH already works.
+        keys_kept = (not regenerate_keys and con.hostname == hostname
+                     and "SSH Enabled" in con.run("show ip ssh"))
+        if keys_kept:
+            commands = [c for c in commands if not c.startswith("crypto key")]
+        con.run("configure terminal")
+        errors = []
+        for cmd in commands:
+            is_crypto = cmd.startswith("crypto key")
+            out = con.run(cmd, timeout=_CRYPTO_TIMEOUT if is_crypto else 30, confirm=is_crypto)
+            errors += [f"{cmd}: {e}" for e in command_errors(out)]
+            if "Please create RSA keys" in out:
+                errors.append(f"{cmd}: {out.strip()}")
+        con.run("end")
+        con.run("write memory", timeout=60, confirm=True)
 
-    return send_console_commands(console_host, console_port, commands, wait=2)
+        ssh_status = con.run("show ip ssh")
+        ssh_enabled = "SSH Enabled - version 2.0" in ssh_status
+        ip = None
+        if mgmt_interface:
+            deadline = time.monotonic() + (dhcp_timeout if use_dhcp else 0)
+            while True:
+                ip = interface_ip(con.run("show ip interface brief"), mgmt_interface)
+                if ip or time.monotonic() >= deadline:
+                    break
+                time.sleep(5)
+
+        problems = list(errors)
+        if any("768 bits" in e or "RSA keys" in e for e in errors):
+            problems.append("the existing RSA keys are too small for SSH v2; "
+                            "run the setup again with regenerate_keys=true")
+        if not ssh_enabled:
+            problems.append("SSH v2 is not enabled after the configuration (check 'show ip ssh')")
+        if mgmt_interface and not ip:
+            problems.append(f"{mgmt_interface} has no IP address"
+                            + (f" after waiting {dhcp_timeout}s for DHCP" if use_dhcp else ""))
+        result = {
+            "status": "error" if problems else "success",
+            "hostname": hostname,
+            "ssh_enabled": ssh_enabled,
+            "mgmt_interface": mgmt_interface,
+            "mgmt_ip": ip,
+            "local_admin": username,
+            "rsa_keys": "kept (SSH host key unchanged)" if keys_kept else "generated",
+            "output": "\n".join(con.transcript),
+        }
+        if problems:
+            result["error"] = "; ".join(problems)
+        else:
+            result["message"] = (f"SSH is enabled on {hostname}. Use host {ip} for SSH tools."
+                                 if ip else f"SSH is enabled on {hostname}.")
+        return result
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+    finally:
+        if con:
+            con.close()
 
 
 def ssh_connect(host, username=None, password=None, secret=None, port=22):

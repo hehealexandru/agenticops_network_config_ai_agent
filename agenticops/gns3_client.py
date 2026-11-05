@@ -263,18 +263,25 @@ class GNS3Client:
                 console_port = n.get("console")
                 if not console_port:
                     return {"status": "error", "error": "Console port not found"}
-                import telnetlib
                 import time
+                from console import TelnetTransport
+                tn = None
                 try:
-                    tn = telnetlib.Telnet(console_host, console_port, timeout=10)
-                    time.sleep(0.5)
+                    tn = TelnetTransport(console_host, console_port, timeout=10)
+                    while tn.read(0.5):
+                        pass  # discard old console output
                     tn.write(command.encode("ascii") + b"\n")
                     time.sleep(2)
-                    output = tn.read_very_eager().decode("ascii", errors="ignore")
-                    tn.close()
+                    chunks = []
+                    while chunk := tn.read(0.5):
+                        chunks.append(chunk)
+                    output = b"".join(chunks).decode("ascii", errors="ignore")
                     return {"status": "success", "output": output}
                 except Exception as e:
                     return {"status": "error", "error": str(e)}
+                finally:
+                    if tn:
+                        tn.close()
         return {"status": "error", "error": f"Node {node_id} not found"}
         
     def get_topology_summary(self, project_id):

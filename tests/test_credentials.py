@@ -140,3 +140,47 @@ def test_invalid_username(path):
     with pytest.raises(CredentialsError, match="username"):
         cs.interactive_login("aaa", input_fn=answers("bad user"),
                              getpass_fn=answers(), path=path)
+
+
+def login(path, scope, user, password, warnings):
+    # password, repeat, then Enter at the enable secret prompt
+    return cs.interactive_login(scope, input_fn=answers(user),
+                                getpass_fn=answers(password, password, ""),
+                                path=path, warn=warnings.append)
+
+
+def test_first_login_has_no_warning(path):
+    warnings = []
+    login(path, "local", "alex", "LocalPass1", warnings)
+    assert warnings == []
+
+
+def test_changed_local_password_warns_about_routers(path):
+    # The bug found in the lab: credentials.json changed, the router kept the old password.
+    warnings = []
+    login(path, "local", "alex", "WrongPass1", warnings)
+    login(path, "local", "alex", "RightPass1", warnings)
+    assert len(warnings) == 1
+    assert "SSH setup again" in warnings[0]
+    assert "RightPass1" not in warnings[0] and "WrongPass1" not in warnings[0]
+
+
+def test_same_credentials_again_do_not_warn(path):
+    warnings = []
+    login(path, "local", "alex", "LocalPass1", warnings)
+    login(path, "local", "alex", "LocalPass1", warnings)
+    assert warnings == []
+
+
+def test_changed_aaa_password_points_to_radius_user(path):
+    warnings = []
+    login(path, "aaa", "ai-agent", "AgentPass99", warnings)
+    login(path, "aaa", "ai-agent", "AgentPass00", warnings)
+    assert warnings and "radius-user passwd ai-agent" in warnings[0]
+
+
+def test_changed_host_password_names_the_device(path):
+    warnings = []
+    login(path, "10.0.100.1", "special", "HostPass11", warnings)
+    login(path, "10.0.100.1", "special", "HostPass22", warnings)
+    assert warnings and "10.0.100.1" in warnings[0]

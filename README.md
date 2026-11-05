@@ -20,7 +20,7 @@
 
 - **Automatic topology discovery** — reads any GNS3 topology via REST API (localhost:3080)
 - **Device classification** — identifies routers (Dynamips/IOU/QEMU), switches, VMs, Docker containers, VPCS, NAT nodes
-- **Zero-touch SSH setup** — configures SSH from scratch via GNS3 Telnet console
+- **Zero-touch SSH setup** — configures SSH from scratch via the GNS3 console: waits for IOS to boot, skips the initial configuration dialog, verifies that SSH v2 is enabled and returns the management IP; existing RSA keys are kept, so the SSH host key does not change on every run
 - **IP assignment** — auto-assigns IPs on interfaces and sub-interfaces
 - **Routing protocols** — OSPF, EIGRP, RIPv2, static routes
 - **Access Control Lists** — create/remove ACLs blocking any traffic type (ICMP, TCP, UDP, specific ports)
@@ -48,9 +48,12 @@ agenticOps/
 ├── requirements.txt
 ├── run.sh
 ├── .env.example
+├── requirements-dev.txt
+├── tests/
 ├── agenticops/
 │   ├── agent.py
 │   ├── llm_provider.py
+│   ├── credentials_store.py
 │   ├── tools.py
 │   ├── gns3_client.py
 │   └── net_config.py
@@ -177,25 +180,11 @@ secrets. With `LLM_REDACT_SECRETS=true` (default), everything sent to the LLM is
 `snmp-server community`, `key-string`, `tacacs/radius ... key`, `crypto isakmp key`,
 type 5/8/9 hashes, and the password/secret values stored in `credentials.json`.
 Only the copy sent to the LLM is masked: configuration pushed to devices and the local history are
-unchanged. Messages you type yourself are not masked, so you can still give the agent a password
-(e.g. for `update_credentials`).
+unchanged. Messages you type yourself are not masked, so never type passwords in the chat: use
+`login` (see [Credentials](#credentials)).
 
-Other variables: `LLM_TIMEOUT` (60), `LLM_MAX_TOKENS` (4096), `LOG_LEVEL` (`WARNING`).
+Other variables: `LLM_TIMEOUT` (60), `LLM_MAX_TOKENS` (4096), `AGENT_MAX_ITERATIONS` (15, LLM steps per request), `LOG_LEVEL` (`WARNING`).
 API keys and unmasked content are never logged.
-
-## After you configure SSH on R1
-Add a route on your Ubuntu machine so you can reach the internal GNS3 network through R1:
-```bash
-sudo ip route add 10.0.0.0/8 via <R1_DHCP_IP>
-```
-Replace `<R1_DHCP_IP>` with the IP that R1 received via DHCP on the NAT interface (FastEthernet2/0). Check it with `show ip interface brief` on R1's console.
-
-## In case of 503 errors on the main model
-Add a second provider to `LLM_PROVIDERS` (see above) so the agent fails over automatically,
-or switch the OpenRouter model:
-```bash
-export OPENROUTER_MODEL="google/gemma-4-31b-it:free"
-```
 
 ## Credentials
 
@@ -211,8 +200,20 @@ You: login           # asks for the scope
 ```
 
 For SSH the agent tries, in order: the device's own entry, `aaa`, `local`. If none works, it asks
-you to run `login`. The first `configure_ssh_on_device` asks for the local administrator if it is
+you to run `login`. If a console asks for a login, the agent answers it with the `local`
+administrator itself; the model never types usernames or passwords.
+
+`login` only changes `credentials.json`. If you change a password that devices already use,
+the agent warns you: run the SSH setup again on those routers (`local`) or change it on the AAA
+server with `radius-user passwd` (`aaa`). The first `configure_ssh_on_device` asks for the local administrator if it is
 not set yet. Local passwords are typed into the IOS CLI, so they cannot contain spaces or `?`.
+
+## Loop guard
+
+Free models sometimes repeat the same call. The agent blocks a tool call that repeats the
+previous one with identical arguments more than twice, and stops the request (handing control
+back to you) if the model ignores the block or a tool fails three times in a row. Calls with
+different arguments, such as the same tool on R1, R2 and R3, are never blocked.
 
 ## After you configure SSH on R1
 Add a route on your Ubuntu machine so you can reach the internal GNS3 network through R1:
@@ -227,7 +228,6 @@ or switch the OpenRouter model:
 ```bash
 export OPENROUTER_MODEL="google/gemma-4-31b-it:free"
 ```
-
 
 ## Related projects
 
