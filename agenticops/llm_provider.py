@@ -287,9 +287,10 @@ class LLMRouter:
     def prepare_messages(self, messages: list[Any]) -> list[dict[str, Any]]:
         prepared = [_message_to_dict(m) for m in messages]
         if self.redact_secrets:
-            known = load_credential_secrets(self.credentials_file)
+            known = load_credential_secrets(self.credentials_file) | load_env_secrets()
             prepared = [redact_message(m, known) for m in prepared]
         return prepared
+
 
     def chat(self, messages: list[Any], tools: list[dict[str, Any]] | None = None) -> ChatResult:
         payload = self.prepare_messages(messages)
@@ -489,20 +490,38 @@ def normalize_message(raw: Any) -> tuple[dict[str, Any], list[ToolCall]]:
 
 _VALUE = r"(?:[^\s\"]+?)(?=\s|\\n|\\r|\"|$)"
 _TYPE = r"(?:\d{1,2}\s+)?"
+# Word boundary that also works after an escaped newline (literal backslash-n before "enable"),
+# because tool results reach the LLM as json.dumps() output.
+_B = r"(?:(?<![\w])|(?<=\\n)|(?<=\\r)|(?<=\\t))"
 _LINE_START = r"(?:^|(?<=\n)|(?<=\\n)|(?<=\"))"
+# A bare number at the end of the line is a key ID ("key chain" -> " key 1"), not a secret.
+_NOT_KEY_ID = r"(?!\d+(?:\s*$|\\n|\\r|\"))"
 
 _SECRET_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(rf"(\benable\s+(?:secret|password)\s+(?:level\s+\d+\s+)?{_TYPE})({_VALUE})", re.MULTILINE),
-    re.compile(rf"(\busername\s+\S+(?:\s+privilege\s+\d+)?\s+(?:secret|password)\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}enable\s+(?:secret|password)\s+(?:level\s+\d+\s+)?{_TYPE})({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}username\s+\S+(?:\s+privilege\s+\d+)?\s+(?:secret|password)\s+{_TYPE})({_VALUE})", re.MULTILINE),
     re.compile(rf"({_LINE_START}[ \t]*(?:password|secret)\s+{_TYPE})({_VALUE})", re.MULTILINE),
-    re.compile(rf"(\bsnmp-server\s+community\s+)({_VALUE})", re.MULTILINE),
-    re.compile(rf"(\bkey-string\s+{_TYPE})({_VALUE})", re.MULTILINE),
-    re.compile(rf"(\b(?:tacacs|radius)-server\b[^\n\"]*?\bkey\s+{_TYPE})({_VALUE})", re.MULTILINE),
-    re.compile(rf"({_LINE_START}[ \t]+key\s+\d\s+)({_VALUE})", re.MULTILINE),
-    re.compile(rf"(\bcrypto\s+isakmp\s+key\s+{_TYPE})({_VALUE})", re.MULTILINE),
-    re.compile(rf"(\bpre-shared-key\s+(?:local\s+|remote\s+)?{_TYPE})({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}snmp-server\s+community\s+)({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}key-string\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    # IOS 12.4: "radius-server host X ... key K", "tacacs-server key K"
+    re.compile(rf"({_B}(?:tacacs|radius)-server\b[^\n\"]*?\bkey\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    # IOS 15.x server blocks: "radius server X" / "tacacs server X" -> " key [0|7] K"
+    re.compile(rf"({_LINE_START}[ \t]+key\s+{_TYPE}){_NOT_KEY_ID}({_VALUE})", re.MULTILINE),
+    # "aaa group server radius G" -> " server-private IP ... key K"
+    re.compile(rf"({_B}server-private\b[^\n\"]*?\bkey\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    # "test aaa group radius [server IP] USER PASSWORD [legacy|new-code]"
+    re.compile(rf"({_B}test\s+aaa\s+group\s+\S+\s+(?:server\s+\S+\s+)?\S+\s+)({_VALUE})", re.MULTILINE),
+    # OSPF / NTP authentication
+    re.compile(rf"({_B}message-digest-key\s+\d+\s+md5\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}ip\s+ospf\s+authentication-key\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}ntp\s+authentication-key\s+\d+\s+md5\s+)({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}crypto\s+isakmp\s+key\s+{_TYPE})({_VALUE})", re.MULTILINE),
+    re.compile(rf"({_B}pre-shared-key\s+(?:local\s+|remote\s+)?{_TYPE})({_VALUE})", re.MULTILINE),
     re.compile(r"(\"(?:password|secret|api_key|key)\"\s*:\s*\")((?:[^\"\\]|\\.)*)(?=\")", re.IGNORECASE),
 ]
+
+# Environment variables whose values are secrets (AAA_RADIUS_KEY, *_API_KEY, ...).
+_SECRET_ENV_RE = re.compile(r"(?:^|_)(?:KEY|SECRET|PASSWORD|PASSWD|TOKEN)$")
 
 _HASH_RE = re.compile(r"\$(?:1|5|6|8|9|14)\$[^\s\"\\]+")
 
@@ -536,6 +555,16 @@ def load_credential_secrets(path: Path | None) -> frozenset[str]:
     result = frozenset(values)
     _credentials_cache[path] = (mtime, result)
     return result
+
+
+def load_env_secrets(env: Mapping[str, str] | None = None) -> frozenset[str]:
+    env = os.environ if env is None else env
+    return frozenset(
+        value for name, value in env.items()
+        if _SECRET_ENV_RE.search(name.upper())
+        and isinstance(value, str)
+        and len(value.strip()) >= _MIN_KNOWN_SECRET_LEN
+    )
 
 
 def redact(text: str, known_secrets: Iterable[str] = ()) -> str:
