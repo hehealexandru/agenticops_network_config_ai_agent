@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from llm_provider import REDACTED, LLMRouter, load_env_secrets, redact, redact_message
+from llm_provider import (REDACTED, LLMRouter, contains_known_secret, load_env_secrets, redact,
+                          redact_message)
 
 SECRET = "AgenticOpsLabKey2026"
 
@@ -125,9 +126,35 @@ def test_tool_call_arguments_are_masked():
     assert json.loads(out)["host"] == "10.0.100.1"
 
 
-def test_user_messages_are_not_masked():
-    message = {"role": "user", "content": f"the key is {SECRET}"}
-    assert redact_message(message)["content"] == f"the key is {SECRET}"
+def test_user_messages_keep_ios_patterns():
+    # The user may ask for a key on purpose; only known saved secrets are masked.
+    message = {"role": "user", "content": f"configure ip ospf authentication-key {SECRET}"}
+    assert redact_message(message)["content"] == message["content"]
+
+
+def test_saved_secret_pasted_by_user_is_masked():
+    message = {"role": "user", "content": f"ssh fails, I use password {SECRET} for alex"}
+    out = redact_message(message, [SECRET])["content"]
+    assert SECRET not in out
+    assert out == "ssh fails, I use password <REDACTED> for alex"
+
+
+def test_contains_known_secret():
+    assert contains_known_secret(f"my password is {SECRET}", [SECRET])
+    assert not contains_known_secret("show ip interface brief", [SECRET])
+    # Only whole values count: a longer word that contains the secret is not a match.
+    assert not contains_known_secret(f"X{SECRET}X", [SECRET])
+    assert not contains_known_secret("", [SECRET])
+
+
+def test_user_message_masking_end_to_end(tmp_path, monkeypatch):
+    creds = tmp_path / "credentials.json"
+    creds.write_text(json.dumps({"local_admin": {"username": "alex", "password": "LocalPass1"}}))
+    router = LLMRouter.__new__(LLMRouter)
+    router.redact_secrets = True
+    router.credentials_file = creds
+    out = router.prepare_messages([{"role": "user", "content": "the password is LocalPass1"}])
+    assert out[0]["content"] == "the password is <REDACTED>"
 
 
 def test_env_secrets_selection():

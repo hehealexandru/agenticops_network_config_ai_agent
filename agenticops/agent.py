@@ -33,6 +33,8 @@ from llm_provider import (
     LLMRouter,
     ProviderConfigError,
     ProviderRequestError,
+    contains_known_secret,
+    known_secrets,
     serialize_tool_result,
 )
 
@@ -220,6 +222,9 @@ def run_agent():
             continue
 
         turn_start = len(conversation)
+        if contains_known_secret(user_input, known_secrets()):
+            print(f"  {Fore.YELLOW}⚠ Your message contains a saved password or key. It is masked "
+                  f"as <REDACTED> before it is sent; use 'login' for credentials.{Style.RESET_ALL}")
         conversation.append({"role": "user", "content": user_input})
 
         iteration = 0

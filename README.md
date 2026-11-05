@@ -180,8 +180,9 @@ secrets. With `LLM_REDACT_SECRETS=true` (default), everything sent to the LLM is
 `snmp-server community`, `key-string`, `tacacs/radius ... key`, `crypto isakmp key`,
 type 5/8/9 hashes, and the password/secret values stored in `credentials.json`.
 Only the copy sent to the LLM is masked: configuration pushed to devices and the local history are
-unchanged. Messages you type yourself are not masked, so never type passwords in the chat: use
-`login` (see [Credentials](#credentials)).
+unchanged. In messages you type yourself only the saved credentials and secret environment values
+are masked (you are warned when that happens); IOS patterns are left alone so you can still ask for,
+say, an OSPF key. Never type passwords in the chat: use `login` (see [Credentials](#credentials)).
 
 Other variables: `LLM_TIMEOUT` (60), `LLM_MAX_TOKENS` (4096), `AGENT_MAX_ITERATIONS` (15, LLM steps per request), `LOG_LEVEL` (`WARNING`).
 API keys and unmasked content are never logged.

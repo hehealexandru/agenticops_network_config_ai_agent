@@ -287,7 +287,7 @@ class LLMRouter:
     def prepare_messages(self, messages: list[Any]) -> list[dict[str, Any]]:
         prepared = [_message_to_dict(m) for m in messages]
         if self.redact_secrets:
-            known = load_credential_secrets(self.credentials_file) | load_env_secrets()
+            known = known_secrets(self.credentials_file)
             prepared = [redact_message(m, known) for m in prepared]
         return prepared
 
@@ -600,23 +600,46 @@ def load_env_secrets(env: Mapping[str, str] | None = None) -> frozenset[str]:
     )
 
 
+def _known_secret_values(known_secrets: Iterable[str]) -> list[str]:
+    # Longest first, so a secret that contains another one is masked whole.
+    return [v for v in sorted(set(known_secrets), key=len, reverse=True)
+            if len(v) >= _MIN_KNOWN_SECRET_LEN]
+
+
+def redact_known(text: str, known_secrets: Iterable[str] = ()) -> str:
+    """Mask only exact known secret values (saved credentials, secret env variables)."""
+    if not text:
+        return text
+    for value in _known_secret_values(known_secrets):
+        text = re.sub(rf"(?<![\w]){re.escape(value)}(?![\w])", REDACTED, text)
+    return text
+
+
+def contains_known_secret(text: str, known_secrets: Iterable[str] = ()) -> bool:
+    return bool(text) and redact_known(text, known_secrets) != text
+
+
+def known_secrets(credentials_file: Path | None = DEFAULT_CREDENTIALS_FILE) -> frozenset[str]:
+    return load_credential_secrets(credentials_file) | load_env_secrets()
+
+
 def redact(text: str, known_secrets: Iterable[str] = ()) -> str:
     if not text:
         return text
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub(lambda m: m.group(1) + REDACTED, text)
     text = _HASH_RE.sub(REDACTED, text)
-    for value in sorted(set(known_secrets), key=len, reverse=True):
-        if len(value) < _MIN_KNOWN_SECRET_LEN:
-            continue
-        text = re.sub(rf"(?<![\w]){re.escape(value)}(?![\w])", REDACTED, text)
-    return text
+    return redact_known(text, known_secrets)
 
 
 def redact_message(message: dict[str, Any], known_secrets: Iterable[str] = ()) -> dict[str, Any]:
-    if message.get("role") == "user":
-        return message
     known = tuple(known_secrets)
+    if message.get("role") == "user":
+        # The user's own words keep IOS patterns (they may ask for an OSPF key on purpose),
+        # but saved credentials pasted by mistake never leave the machine.
+        if isinstance(message.get("content"), str):
+            message["content"] = redact_known(message["content"], known)
+        return message
     content = message.get("content")
     if isinstance(content, str):
         message["content"] = redact(content, known)
