@@ -33,8 +33,8 @@ LEGACY_DEFAULT_MODELS: dict[str, str] = {
 
 DEFAULT_HEADERS: dict[str, dict[str, str]] = {
     "openrouter": {
-        "HTTP-Referer": "https://github.com/netauto-project",
-        "X-Title": "NetAuto AgenticOps v2",
+        "HTTP-Referer": "https://github.com/hehealexandru/agenticops_network_config_ai_agent",
+        "X-Title": "AgenticOps",
     },
 }
 
@@ -487,6 +487,39 @@ def normalize_message(raw: Any) -> tuple[dict[str, Any], list[ToolCall]]:
     return message, tool_calls
 
 
+
+def _shorten_strings(value: Any, max_len: int) -> Any:
+    if isinstance(value, str) and len(value) > max_len:
+        return value[:max_len] + f"... [truncated, {len(value) - max_len} chars omitted]"
+    if isinstance(value, dict):
+        return {k: _shorten_strings(v, max_len) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_shorten_strings(v, max_len) for v in value]
+    return value
+
+
+def serialize_tool_result(result: Any, limit: int = 16000) -> str:
+    """Serialize a tool result for the LLM, always as valid JSON of at most `limit` chars.
+
+    Long string values (device output, running-config) are shortened instead of cutting
+    the serialized JSON, so the structure (status, error, keys) stays intact.
+    """
+    text = json.dumps(result, ensure_ascii=False)
+    if len(text) <= limit:
+        return text
+    max_len = limit
+    while max_len > 100:
+        max_len //= 2
+        shortened = _shorten_strings(result, max_len)
+        if isinstance(shortened, dict):
+            shortened = {**shortened, "truncated": True}
+        text = json.dumps(shortened, ensure_ascii=False)
+        if len(text) <= limit:
+            return text
+    # Pathological case (thousands of small values): keep a plain-text preview.
+    status = result.get("status", "success") if isinstance(result, dict) else "success"
+    return json.dumps({"status": status, "truncated": True, "preview": text[:limit // 4]},
+                      ensure_ascii=False)
 
 _VALUE = r"(?:[^\s\"]+?)(?=\s|\\n|\\r|\"|$)"
 _TYPE = r"(?:\d{1,2}\s+)?"

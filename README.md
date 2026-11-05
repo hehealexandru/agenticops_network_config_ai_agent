@@ -197,6 +197,38 @@ or switch the OpenRouter model:
 export OPENROUTER_MODEL="google/gemma-4-31b-it:free"
 ```
 
+## Credentials
+
+Device credentials are entered only with the local `login` command. Input is hidden, the values
+are stored in `credentials.json` (mode 600, git-ignored) and they never pass through the
+conversation or the LLM. There are no default credentials.
+
+```
+You: login aaa       # the AgenticOps profile on the AAA server (radius-user add ai-agent agent)
+You: login local     # the local lab administrator created by the SSH setup
+You: login 10.0.0.2  # credentials for one specific device
+You: login           # asks for the scope
+```
+
+For SSH the agent tries, in order: the device's own entry, `aaa`, `local`. If none works, it asks
+you to run `login`. The first `configure_ssh_on_device` asks for the local administrator if it is
+not set yet. Local passwords are typed into the IOS CLI, so they cannot contain spaces or `?`.
+
+## After you configure SSH on R1
+Add a route on your Ubuntu machine so you can reach the internal GNS3 network through R1:
+```bash
+sudo ip route add 10.0.0.0/8 via <R1_DHCP_IP>
+```
+Replace `<R1_DHCP_IP>` with the IP that R1 received via DHCP on the NAT interface (FastEthernet2/0). Check it with `show ip interface brief` on R1's console.
+
+## In case of 503 errors on the main model
+Add a second provider to `LLM_PROVIDERS` (see above) so the agent fails over automatically,
+or switch the OpenRouter model:
+```bash
+export OPENROUTER_MODEL="google/gemma-4-31b-it:free"
+```
+
+
 ## Related projects
 
 - [AgenticOps AAA Server](https://github.com/hehealexandru/agenticops-aaa-server) — FreeRADIUS

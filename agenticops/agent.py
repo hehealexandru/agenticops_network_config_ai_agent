@@ -24,12 +24,15 @@ logging.basicConfig(
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import credentials_store
+from credentials_store import CredentialsError
 from tools import TOOL_DEFINITIONS, execute_tool
 from llm_provider import (
     AllProvidersUnavailable,
     LLMRouter,
     ProviderConfigError,
     ProviderRequestError,
+    serialize_tool_result,
 )
 
 try:
@@ -64,8 +67,22 @@ MUTATING_TOOLS = {
     "send_console_raw",
     "configure_stp",
     "docker_exec_command",
-    "update_credentials",
 }
+
+
+def run_login(scope=None):
+    """Handle the local 'login' command. Nothing here is added to the conversation."""
+    print(f"  {Fore.YELLOW}Credentials are saved locally and never sent to the LLM.{Style.RESET_ALL}")
+    try:
+        message = credentials_store.interactive_login(scope)
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n  {Fore.YELLOW}Login cancelled.{Style.RESET_ALL}")
+        return False
+    except CredentialsError as e:
+        print(f"  {Fore.RED}✗ {e}{Style.RESET_ALL}")
+        return False
+    print(f"  {Fore.GREEN}✓ {message}{Style.RESET_ALL}")
+    return True
 
 
 def confirm_action(tool_name):
@@ -114,7 +131,7 @@ STRICT rules:
 15. For Docker containers, use docker_exec_command to configure IP, gateway, or to test connectivity. Example commands: 'ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.1', 'ping -c 3 10.0.1.1'.
 16. For troubleshooting, use ping_from_router to test connectivity hop by hop and collect_device_info to collect full information from a router. Analyze interfaces (up/down), routes, ACLs and OSPF neighbors to find the problem.
 17. generate_documentation generates ONLY the topology documentation (devices, connections, management). Use it ONLY when the user asks for network or topology documentation.
-18. If the user changes the SSH credentials on a router, use update_credentials to save the new credentials. The agent will use them automatically for future connections.
+18. Credentials are managed only by the user, with the local 'login' command. NEVER ask the user to type a password in the chat and never put passwords in tool arguments. If SSH authentication fails or credentials are missing, tell the user to run 'login' (scope 'aaa', 'local' or the device IP).
 19. <REDACTED> values in tool output are masked secrets. NEVER use them in configuration commands; if you need the real value, ask the user.
 """
 
@@ -130,7 +147,7 @@ def run_agent():
 ║                                                              ║
 ║                                                              ║
 ║                                                              ║
-║   Special commands: 'exit', 'clear', 'model'                 ║
+║   Special commands: 'exit', 'clear', 'model', 'login'        ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
 
@@ -152,6 +169,9 @@ def run_agent():
         if user_input.lower() == "clear":
             conversation = [{"role": "system", "content": SYSTEM_PROMPT}]
             print(f"{Fore.YELLOW}Conversation reset.{Style.RESET_ALL}")
+            continue
+        if user_input.lower() == "login" or user_input.lower().startswith("login "):
+            run_login(user_input[5:].strip() or None)
             continue
         if user_input.lower() == "model":
             print(f"{Fore.YELLOW}Providers (in priority order):{Style.RESET_ALL}")
@@ -232,6 +252,11 @@ def run_agent():
                         decision = confirm_action(tool_name)
                         if decision == "a":
                             approve_all = True
+                    if decision != "n" and tool_name == "configure_ssh_on_device" \
+                            and not credentials_store.get(credentials_store.LOCAL_KEY):
+                        print(f"  {Fore.YELLOW}The SSH setup creates a local lab administrator on the router. Enter it now:{Style.RESET_ALL}")
+                        if not run_login("local"):
+                            decision = "n"
                     if decision == "n":
                         tool_result = {"status": "error", "error": f"The user declined {tool_name}. Do not retry it; ask the user how to proceed."}
                     else:
@@ -263,9 +288,7 @@ def run_agent():
                 else:
                     print(f"  {Fore.RED}✗ {tool_result.get('error', 'Unknown error')}{Style.RESET_ALL}")
 
-                result_str = json.dumps(tool_result, ensure_ascii=False)
-                if len(result_str) > 16000:
-                    result_str = result_str[:16000] + '..."}'
+                result_str = serialize_tool_result(tool_result, limit=16000)
 
                 conversation.append({
                     "role": "tool",

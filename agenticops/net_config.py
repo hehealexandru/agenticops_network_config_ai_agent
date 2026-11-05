@@ -3,37 +3,17 @@
 import os
 import telnetlib
 import time
-import json
 from pathlib import Path
 from netmiko import ConnectHandler
+from netmiko.exceptions import NetmikoAuthenticationException
+
+import credentials_store
+from credentials_store import CredentialsError
 
 CONSOLE_HOST = os.environ.get("GNS3_HOST", "127.0.0.1")
-CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "credentials.json")
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
 BACKUP_DIR = BASE_DIR / "backups"
-
-def load_credentials(host):
-    if os.path.exists(CREDENTIALS_FILE):
-        with open(CREDENTIALS_FILE, "r") as f:
-            creds = json.load(f)
-        if host in creds:
-            return creds[host]
-    return {"username": "admin", "password": "cisco", "secret": "cisco"}
-
-def save_credentials(host, username, password, secret=None):
-    creds = {}
-    if os.path.exists(CREDENTIALS_FILE):
-        with open(CREDENTIALS_FILE, "r") as f:
-            creds = json.load(f)
-    creds[host] = {
-        "username": username,
-        "password": password,
-        "secret": secret or password,
-    }
-    with open(CREDENTIALS_FILE, "w") as f:
-        json.dump(creds, f, indent=2)
-    return {"status": "success", "message": f"Credentials saved for {host}"}
 
 def ensure_dirs():
     LOG_DIR.mkdir(exist_ok=True)
@@ -63,7 +43,8 @@ def send_console_commands(host, port, commands, wait=1):
         return {"status": "error", "error": str(e)}
 
 
-def configure_initial_ssh(console_host, console_port, hostname, mgmt_interface=None, mgmt_ip=None, mgmt_mask=None, use_dhcp=False):
+def configure_initial_ssh(console_host, console_port, hostname, username, password, secret,
+                          mgmt_interface=None, mgmt_ip=None, mgmt_mask=None, use_dhcp=False):
     commands = [
         "",
         "enable",
@@ -71,8 +52,8 @@ def configure_initial_ssh(console_host, console_port, hostname, mgmt_interface=N
         f"hostname {hostname}",
         "ip domain-name lab.local",
         "crypto key generate rsa modulus 2048",
-        "username admin privilege 15 secret cisco",
-        "enable secret cisco",
+        f"username {username} privilege 15 secret {password}",
+        f"enable secret {secret}",
         "line vty 0 4",
         "login local",
         "transport input ssh",
@@ -94,26 +75,41 @@ def configure_initial_ssh(console_host, console_port, hostname, mgmt_interface=N
 
 
 def ssh_connect(host, username=None, password=None, secret=None, port=22):
-    if username is None or password is None:
-        creds = load_credentials(host)
-        username = username or creds["username"]
-        password = password or creds["password"]
-        secret = secret or creds.get("secret", password)
+    if username and password:
+        options = [("explicit", {"username": username, "password": password, "secret": secret})]
+    else:
+        options = credentials_store.candidates(host)
+    if not options:
+        raise CredentialsError(
+            f"No credentials for {host}. Ask the user to run the 'login' command "
+            "(scope 'aaa', 'local' or the device IP). Never ask for passwords in the chat."
+        )
     ensure_dirs()
-    conn = ConnectHandler(
-        device_type="cisco_ios",
-        host=host,
-        username=username,
-        password=password,
-        secret=secret,
-        port=port,
-        timeout=30,
-        disabled_algorithms={
-            "pubkeys": ["rsa-sha2-256", "rsa-sha2-512"],
-        },
+    tried = []
+    for label, creds in options:
+        try:
+            conn = ConnectHandler(
+                device_type="cisco_ios",
+                host=host,
+                username=creds["username"],
+                password=creds["password"],
+                secret=creds.get("secret") or "",
+                port=port,
+                timeout=30,
+                disabled_algorithms={
+                    "pubkeys": ["rsa-sha2-256", "rsa-sha2-512"],
+                },
+            )
+        except NetmikoAuthenticationException:
+            tried.append(f"{label} ({creds['username']})")
+            continue
+        if not conn.check_enable_mode():
+            conn.enable()
+        return conn
+    raise CredentialsError(
+        f"SSH authentication failed for {host} with: {', '.join(tried)}. "
+        "Ask the user to run the 'login' command with the correct credentials."
     )
-    conn.enable()
-    return conn
 
 def send_show(host, command, **ssh_kwargs):
     try:

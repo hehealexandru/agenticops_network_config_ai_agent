@@ -4,6 +4,7 @@ import os
 import json
 from pathlib import Path
 
+import credentials_store
 from gns3_client import GNS3Client
 from net_config import (
     send_show, send_config, configure_initial_ssh,
@@ -12,7 +13,6 @@ from net_config import (
     configure_static_route, configure_acl, remove_acl,
     backup_config, configure_stp, send_console_commands, get_interface_name,
     ping_from_device, collect_device_info,
-    save_credentials,
 )
 
 gns3 = GNS3Client()
@@ -74,7 +74,8 @@ TOOL_DEFINITIONS = [
         "name": "configure_ssh_on_device",
         "description": (
             "Configures SSH on a router through the GNS3 Telnet console. "
-            "Sets the hostname, credentials (admin/cisco), generates RSA keys, "
+            "Sets the hostname, creates the local lab administrator saved by the user "
+            "with the 'login local' command, generates RSA keys, "
             "and optionally configures the management interface with a static IP or DHCP. "
             "Use this BEFORE any other SSH configuration."
         ),
@@ -416,24 +417,6 @@ TOOL_DEFINITIONS = [
             },
         }
     },
-    {
-        "name": "update_credentials",
-        "description": (
-            "Saves the SSH credentials for a device. "
-            "Use it after the user changes the password on a router. "
-            "The agent will use these credentials for future SSH connections."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "host": {"type": "string", "description": "Device IP address"},
-                "username": {"type": "string", "description": "SSH username"},
-                "password": {"type": "string", "description": "SSH password"},
-                "secret": {"type": "string", "description": "Enable secret (optional, defaults to the password)"}
-            },
-            "required": ["host", "username", "password"]
-        }
-    },
 ]
 
 def _find_node(device_name):
@@ -507,10 +490,19 @@ def execute_tool(tool_name, tool_input):
             _, node, err = _find_node(device_name)
             if err:
                 return err
+            local = credentials_store.get(credentials_store.LOCAL_KEY)
+            if not local:
+                return {"status": "error", "error": (
+                    "The local lab administrator is not set. Ask the user to run the "
+                    "'login local' command. Never ask for passwords in the chat."
+                )}
             return configure_initial_ssh(
                 console_host=os.environ.get("GNS3_HOST", node.get("console_host", "127.0.0.1")),
                 console_port=node["console"],
                 hostname=device_name,
+                username=local["username"],
+                password=local["password"],
+                secret=local.get("secret") or local["password"],
                 mgmt_interface=tool_input.get("mgmt_interface"),
                 mgmt_ip=tool_input.get("mgmt_ip"),
                 mgmt_mask=tool_input.get("mgmt_mask"),
@@ -677,15 +669,7 @@ def execute_tool(tool_name, tool_input):
                 f.write("\n".join(lines))
 
             return {"status": "success", "output": f"Documentation saved to {filepath}", "content": "\n".join(lines)}
-            
-        elif tool_name == "update_credentials":
-            return save_credentials(
-                tool_input["host"],
-                tool_input["username"],
-                tool_input["password"],
-                tool_input.get("secret"),
-            )
-            
+
         return {"status": "error", "error": f"Unknown tool: {tool_name}"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
